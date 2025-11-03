@@ -845,7 +845,7 @@ if buscar:
         for desc in descobertas:
             status_color = "🔴" if desc['status'] == 'NOVO' else "🟡" if desc['status'] == 'CANDIDATO' else "🔵"
             
-            with st.expander(f"{status_color} {desc['tipo']} #{desc['indice']} - Status: {desc['status']}"):
+            with st.expander(f"{status_color} {desc['tipo']} #{desc['indice']} - Status: {desc['status']}", expanded=True):
                 col1, col2 = st.columns(2)
                 with col1:
                     st.metric("Confiança", f"{desc['confianca']:.1f}%")
@@ -855,9 +855,74 @@ if buscar:
                 st.info(f"**Parâmetros:** {desc['parametros']}")
                 
                 if desc['status'] == 'NOVO':
-                    st.success("**Potencial descoberta!** Este objeto apresenta características únicas e alta confiança. Recomenda-se análise detalhada e verificação com catálogos profissionais.")
+                    st.success("**Potencial descoberta!** Este objeto apresenta características únicas e alta confiança.")
+                    
+                    st.markdown("### Próximos Passos:")
+                    
+                    tab1, tab2, tab3 = st.tabs(["Verificação", "Monitoramento", "Publicação"])
+                    
+                    with tab1:
+                        st.markdown("""
+                        **Verificar se já é conhecido:**
+                        
+                        1. 🔍 Buscar coordenadas no SIMBAD
+                        2. 🔍 Verificar NASA Exoplanet Archive
+                        3. 🔍 Consultar catálogos recentes
+                        
+                        **Se NÃO encontrar nada = POSSÍVEL DESCOBERTA!**
+                        """)
+                        
+                        if ra is not None and dec is not None:
+                            st.code(f"""
+Links diretos para verificação:
+
+SIMBAD: http://simbad.u-strasbg.fr/simbad/sim-coo?Coord={ra}+{dec}&Radius=2
+
+NASA Exoplanet: https://exoplanetarchive.ipac.caltech.edu/
+
+VizieR: https://vizier.u-strasbg.fr/viz-bin/VizieR?-c={ra}+{dec}&-c.rs=2
+                            """)
+                    
+                    with tab2:
+                        st.markdown("""
+                        **Continue observando:**
+                        
+                        - ✓ Faça pelo menos 3 observações em datas diferentes
+                        - ✓ Use cadência curta (short) para maior precisão
+                        - ✓ Tente outras missões (Kepler + TESS)
+                        - ✓ Documente todas as observações
+                        
+                        O sistema já está salvando automaticamente no banco de dados.
+                        """)
+                    
+                    with tab3:
+                        st.markdown("""
+                        **Como reportar sua descoberta:**
+                        
+                        **Para Planetas:**
+                        - 📧 NASA Exoplanet Archive
+                        - 📧 Exoplanet.eu
+                        - 📄 Publicar paper em journals: AJ, ApJ, MNRAS
+                        
+                        **Para Cometas/Asteroides:**
+                        - 📧 Minor Planet Center (MPC)
+                        - 📧 Central Bureau for Astronomical Telegrams
+                        
+                        **Para Transientes (Supernovas):**
+                        - 📧 Transient Name Server (TNS)
+                        - 📧 AAVSO
+                        
+                        **Dica:** Aguarde confirmação de pelo menos 3 observações independentes!
+                        """)
+                
                 elif desc['status'] == 'CANDIDATO':
                     st.info("**Candidato interessante.** Necessita mais observações para confirmação.")
+                    st.markdown("""
+                    **Ações recomendadas:**
+                    - Continue monitorando este objeto
+                    - Faça mais 2-3 observações
+                    - Use diferentes configurações de cadência
+                    """)
     else:
         st.info("Nenhuma descoberta potencial detectada com os critérios atuais. Objetos detectados parecem corresponder a padrões conhecidos.")
     
@@ -944,6 +1009,74 @@ if 'mostrar_historico' in st.session_state and st.session_state['mostrar_histori
                     st.write(f"**Data:** {desc['timestamp']}")
                 
                 st.info(f"**Parâmetros:** {desc['parametros']}")
+                
+                # GUIA DE AÇÕES
+                st.divider()
+                st.subheader("O que fazer agora?")
+                
+                if desc['status'] == 'NOVO':
+                    st.warning("**POSSÍVEL DESCOBERTA!** Siga estes passos:")
+                    
+                    st.markdown("""
+                    **1. Verificar em Catálogos Profissionais:**
+                    - 🔗 [SIMBAD](http://simbad.u-strasbg.fr/simbad/sim-fcoo) - Busque por coordenadas
+                    - 🔗 [NASA Exoplanet Archive](https://exoplanetarchive.ipac.caltech.edu/) - Verificar planetas conhecidos
+                    - 🔗 [VizieR](https://vizier.u-strasbg.fr/viz-bin/VizieR) - Catálogos astronômicos
+                    
+                    **2. Coletar Mais Dados:**
+                    - Faça novas observações em datas diferentes
+                    - Use cadência "short" para maior precisão
+                    - Procure em outras missões (TESS se usou Kepler, ou vice-versa)
+                    
+                    **3. Análise Detalhada:**
+                    - Calcule parâmetros físicos (massa, raio, temperatura)
+                    - Verifique periodicidade consistente
+                    - Descarte falsos positivos (artefatos instrumentais)
+                    
+                    **4. Reportar Descoberta:**
+                    - 📧 [Telegram do Minor Planet Center](https://www.minorplanetcenter.net/) (asteroides/cometas)
+                    - 📧 [Transient Name Server](https://www.wis-tns.org/) (supernovas/transientes)
+                    - 📧 [AAVSO](https://www.aavso.org/) (estrelas variáveis)
+                    - 📧 Publicar em [arXiv](https://arxiv.org/) ou journals especializados
+                    """)
+                    
+                    # Coordenadas para copiar
+                    ra_h = int(desc['ra'] / 15)
+                    ra_m = int((desc['ra'] / 15 - ra_h) * 60)
+                    ra_s = ((desc['ra'] / 15 - ra_h) * 60 - ra_m) * 60
+                    
+                    dec_sign = '+' if desc['dec'] >= 0 else '-'
+                    dec_d = int(abs(desc['dec']))
+                    dec_m = int((abs(desc['dec']) - dec_d) * 60)
+                    dec_s = ((abs(desc['dec']) - dec_d) * 60 - dec_m) * 60
+                    
+                    st.code(f"""
+Coordenadas para busca em catálogos:
+RA (decimal): {desc['ra']:.4f}°
+Dec (decimal): {desc['dec']:.4f}°
+
+RA (sexagesimal): {ra_h:02d}h {ra_m:02d}m {ra_s:05.2f}s
+Dec (sexagesimal): {dec_sign}{dec_d:02d}° {dec_m:02d}' {dec_s:05.2f}"
+
+Busca SIMBAD: 
+http://simbad.u-strasbg.fr/simbad/sim-coo?Coord={desc['ra']}+{desc['dec']}&Radius=2
+
+Busca NASA Exoplanet:
+https://exoplanetarchive.ipac.caltech.edu/cgi-bin/nstedAPI/nph-nstedAPI?table=exoplanets&select=*&where=ra>{desc['ra']-1}+and+ra<{desc['ra']+1}
+                    """, language="text")
+                
+                elif desc['status'] == 'CANDIDATO':
+                    st.info("**Candidato interessante.** Recomendações:")
+                    st.markdown("""
+                    1. **Continue monitorando** - Faça mais 2-3 observações
+                    2. **Aumente a confiança** - Use dados de cadência curta
+                    3. **Verifique consistência** - O padrão se repete?
+                    4. **Aguarde confirmação** antes de reportar
+                    """)
+                
+                # Botão para criar relatório
+                if st.button(f"Gerar Relatório PDF", key=f"relatorio_{desc['id']}"):
+                    st.info("Funcionalidade de relatório PDF será implementada em breve!")
     else:
         st.info("Nenhuma descoberta potencial registrada ainda")
     
