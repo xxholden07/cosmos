@@ -1,4 +1,4 @@
-ç..,, m   """
+"""
 Interface Web - Análise de Dados Cósmicos
 Sistema profissional com dados REAIS do Kepler/TESS
 """
