@@ -15,9 +15,11 @@ from celestial_detector import CelestialBodyDetector
 from stellar_seismology import StellarSeismologyAnalyzer
 from pattern_detector import PatternDetector
 from database import CelestialDatabase
+from simbad_checker import SimbadChecker
 
-# Inicializar banco de dados
+# Inicializar banco de dados e verificador SIMBAD
 db = CelestialDatabase()
+simbad = SimbadChecker(radius_arcmin=2.0)
 
 # Configuração da página
 st.set_page_config(
@@ -136,8 +138,8 @@ def criar_mapa_ceu(ra, dec, nome_estrela):
     
     return fig
 
-def verificar_novidade(planetas, cometas, meteoros, nome_estrela):
-    """Analisa se as detecções podem ser descobertas novas"""
+def verificar_novidade(planetas, cometas, meteoros, nome_estrela, ra=None, dec=None):
+    """Analisa se as detecções podem ser descobertas novas (com verificação SIMBAD)"""
     descobertas_potenciais = []
     
     # Verificar planetas
@@ -148,37 +150,83 @@ def verificar_novidade(planetas, cometas, meteoros, nome_estrela):
             # 2. Período não comum (evitar artefatos)
             # 3. Profundidade significativa
             if p['confidence'] > 70 and 0.5 < p['period_days'] < 50:
-                descobertas_potenciais.append({
+                descoberta = {
                     'tipo': 'Planeta',
                     'indice': i + 1,
                     'confianca': p['confidence'],
                     'parametros': f"Período: {p['period_days']:.2f}d, Raio: {np.sqrt(p['transit_depth'])*109:.1f}R⊕",
-                    'status': 'NOVO' if p['confidence'] > 85 else 'CANDIDATO'
-                })
+                    'status': 'NOVO' if p['confidence'] > 85 else 'CANDIDATO',
+                    'simbad': None
+                }
+                
+                # Verificar no SIMBAD se temos coordenadas
+                if ra is not None and dec is not None:
+                    try:
+                        resultado_simbad = simbad.verificar_coordenadas(ra, dec)
+                        classificacao = simbad.classificar_descoberta(resultado_simbad, p['confidence'])
+                        descoberta['simbad'] = resultado_simbad
+                        descoberta['status'] = classificacao['status']
+                        descoberta['prioridade'] = classificacao['prioridade']
+                        descoberta['recomendacao_simbad'] = classificacao['recomendacao']
+                    except Exception as e:
+                        descoberta['simbad_erro'] = str(e)
+                
+                descobertas_potenciais.append(descoberta)
     
     # Verificar cometas
     if cometas and len(cometas) > 0:
         for i, c in enumerate(cometas):
             if c['confidence'] > 0.8:
-                descobertas_potenciais.append({
+                descoberta = {
                     'tipo': 'Cometa/Evento Variável',
                     'indice': i + 1,
                     'confianca': c['confidence'] * 100,
                     'parametros': f"Aumento: {c['brightness_increase']*100:.1f}%",
-                    'status': 'NOVO'
-                })
+                    'status': 'NOVO',
+                    'simbad': None
+                }
+                
+                # Verificar no SIMBAD
+                if ra is not None and dec is not None:
+                    try:
+                        resultado_simbad = simbad.verificar_coordenadas(ra, dec)
+                        classificacao = simbad.classificar_descoberta(resultado_simbad, c['confidence'] * 100)
+                        descoberta['simbad'] = resultado_simbad
+                        descoberta['status'] = classificacao['status']
+                        descoberta['prioridade'] = classificacao['prioridade']
+                        descoberta['recomendacao_simbad'] = classificacao['recomendacao']
+                    except Exception as e:
+                        descoberta['simbad_erro'] = str(e)
+                
+                descobertas_potenciais.append(descoberta)
     
     # Verificar meteoros/transientes
     if meteoros and len(meteoros) > 0:
         eventos_rapidos = [m for m in meteoros if m.get('confidence', 0) > 0.7]
         if len(eventos_rapidos) > 0:
-            descobertas_potenciais.append({
+            descoberta = {
                 'tipo': 'Eventos Transientes Rápidos',
                 'indice': len(eventos_rapidos),
                 'confianca': np.mean([m.get('confidence', 0) for m in eventos_rapidos]) * 100,
                 'parametros': f"{len(eventos_rapidos)} eventos detectados",
-                'status': 'ANALISAR'
-            })
+                'status': 'ANALISAR',
+                'simbad': None
+            }
+            
+            # Verificar no SIMBAD
+            if ra is not None and dec is not None:
+                try:
+                    confianca_media = np.mean([m.get('confidence', 0) for m in eventos_rapidos]) * 100
+                    resultado_simbad = simbad.verificar_coordenadas(ra, dec)
+                    classificacao = simbad.classificar_descoberta(resultado_simbad, confianca_media)
+                    descoberta['simbad'] = resultado_simbad
+                    descoberta['status'] = classificacao['status']
+                    descoberta['prioridade'] = classificacao.get('prioridade', 2)
+                    descoberta['recomendacao_simbad'] = classificacao['recomendacao']
+                except Exception as e:
+                    descoberta['simbad_erro'] = str(e)
+            
+            descobertas_potenciais.append(descoberta)
     
     return descobertas_potenciais
 
@@ -837,25 +885,108 @@ if buscar:
     cometas_detectados = analisar_cometas(time, flux) if detect_comets else []
     meteoros_detectados = analisar_meteoros(time, flux) if detect_meteors else []
     
-    descobertas = verificar_novidade(planetas_detectados, cometas_detectados, meteoros_detectados, nome_estrela)
+    # Verificar com SIMBAD (passar coordenadas)
+    with st.spinner("Verificando descobertas no SIMBAD..."):
+        descobertas = verificar_novidade(
+            planetas_detectados, 
+            cometas_detectados, 
+            meteoros_detectados, 
+            nome_estrela,
+            ra,  # passar coordenadas
+            dec
+        )
     
     if len(descobertas) > 0:
         st.warning(f"**ATENÇÃO: {len(descobertas)} possíveis descobertas ou objetos de interesse detectados!**")
         
         for desc in descobertas:
-            status_color = "🔴" if desc['status'] == 'NOVO' else "🟡" if desc['status'] == 'CANDIDATO' else "🔵"
+            # Ícone baseado no status SIMBAD
+            if desc['status'] == 'NOVA':
+                status_color = "�"
+                status_msg = "POTENCIAL DESCOBERTA!"
+            elif desc['status'] == 'CONHECIDA':
+                status_color = "⚪"
+                status_msg = "OBJETO CONHECIDO"
+            elif desc['status'] == 'CANDIDATA':
+                status_color = "🟡"
+                status_msg = "CANDIDATO"
+            else:
+                status_color = "🔵"
+                status_msg = "ANALISAR"
             
-            with st.expander(f"{status_color} {desc['tipo']} #{desc['indice']} - Status: {desc['status']}", expanded=True):
-                col1, col2 = st.columns(2)
+            prioridade = desc.get('prioridade', 2)
+            
+            with st.expander(
+                f"{status_color} {desc['tipo']} #{desc['indice']} - {status_msg} (Prioridade: {prioridade}/5)", 
+                expanded=(prioridade >= 4)
+            ):
+                col1, col2, col3 = st.columns(3)
                 with col1:
-                    st.metric("Confiança", f"{desc['confianca']:.1f}%")
+                    st.metric("Confiança Detecção", f"{desc['confianca']:.1f}%")
                 with col2:
-                    st.metric("Status", desc['status'])
+                    st.metric("Status SIMBAD", desc['status'])
+                with col3:
+                    st.metric("Prioridade", f"{prioridade}/5")
                 
                 st.info(f"**Parâmetros:** {desc['parametros']}")
                 
-                if desc['status'] == 'NOVO':
-                    st.success("**Potencial descoberta!** Este objeto apresenta características únicas e alta confiança.")
+                # Mostrar resultado SIMBAD
+                if 'simbad' in desc and desc['simbad']:
+                    st.divider()
+                    st.subheader("Verificação SIMBAD")
+                    
+                    resultado_simbad = desc['simbad']
+                    
+                    col1, col2 = st.columns([2, 1])
+                    with col1:
+                        total_objetos = resultado_simbad.get('total_objetos', 0)
+                        
+                        if total_objetos == 0:
+                            st.success("✅ **Nenhum objeto conhecido encontrado nestas coordenadas!**")
+                        else:
+                            st.warning(f"⚠️ **{total_objetos} objetos encontrados no campo**")
+                            
+                            obj_principal = resultado_simbad.get('objeto_principal')
+                            if obj_principal:
+                                st.markdown(f"""
+**Objeto mais próximo:**
+- **Nome:** {obj_principal.get('identificador', 'N/A')}
+- **Tipo:** {obj_principal.get('tipo', 'N/A')}
+- **Distância:** {obj_principal.get('distancia_arcsec', 0):.2f} arcsec
+- **Referências:** {obj_principal.get('referencias', 0)} papers
+                                """)
+                                
+                                if obj_principal.get('distancia_arcsec', 999) < 5:
+                                    st.info("🎯 Objeto muito próximo (< 5 arcsec) - Provavelmente é o mesmo objeto")
+                                elif obj_principal.get('distancia_arcsec', 999) < 30:
+                                    st.warning("📍 Objeto moderadamente próximo - Pode ser o mesmo ou campo estelar")
+                                else:
+                                    st.success("📍 Objeto distante - Sua detecção pode ser algo novo no campo!")
+                    
+                    with col2:
+                        url_simbad = resultado_simbad.get('url_busca', '')
+                        if url_simbad:
+                            st.markdown(f"[🔗 Ver no SIMBAD]({url_simbad})")
+                
+                # Recomendação do sistema
+                if 'recomendacao_simbad' in desc:
+                    st.divider()
+                    if desc['status'] == 'NOVA':
+                        st.success(f"**Recomendação:** {desc['recomendacao_simbad']}")
+                    elif desc['status'] == 'CONHECIDA':
+                        st.info(f"**Análise:** {desc['recomendacao_simbad']}")
+                    else:
+                        st.warning(f"**Recomendação:** {desc['recomendacao_simbad']}")
+                
+                # Erro na verificação SIMBAD
+                if 'simbad_erro' in desc:
+                    st.error(f"⚠️ Erro ao verificar SIMBAD: {desc['simbad_erro']}")
+                    st.info("Verifique manualmente no link acima ou tente novamente mais tarde.")
+                
+                # Próximos passos baseado no status
+                if desc['status'] == 'NOVA':
+                    st.divider()
+                    st.success("### 🎉 POSSÍVEL DESCOBERTA!")
                     
                     st.markdown("### Próximos Passos:")
                     
@@ -863,24 +994,30 @@ if buscar:
                     
                     with tab1:
                         st.markdown("""
-                        **Verificar se já é conhecido:**
+                        **Verificações adicionais:**
                         
-                        1. 🔍 Buscar coordenadas no SIMBAD
-                        2. 🔍 Verificar NASA Exoplanet Archive
-                        3. 🔍 Consultar catálogos recentes
+                        1. ✅ Verificado no SIMBAD - Não encontrado
+                        2. 🔍 Verificar em outros catálogos:
+                           - NASA Exoplanet Archive
+                           - VizieR (catálogos variados)
+                           - Minor Planet Center (se for cometa/asteroide)
+                        3. 🔍 Buscar em papers recentes (últimos 6 meses)
                         
-                        **Se NÃO encontrar nada = POSSÍVEL DESCOBERTA!**
+                        **Se continuar não encontrando = DESCOBERTA CONFIRMADA!**
                         """)
                         
                         if ra is not None and dec is not None:
                             st.code(f"""
-Links diretos para verificação:
+Links para verificação adicional:
 
-SIMBAD: http://simbad.u-strasbg.fr/simbad/sim-coo?Coord={ra}+{dec}&Radius=2
+NASA Exoplanet Archive:
+https://exoplanetarchive.ipac.caltech.edu/
 
-NASA Exoplanet: https://exoplanetarchive.ipac.caltech.edu/
+VizieR:
+https://vizier.u-strasbg.fr/viz-bin/VizieR?-c={ra}+{dec}&-c.rs=2
 
-VizieR: https://vizier.u-strasbg.fr/viz-bin/VizieR?-c={ra}+{dec}&-c.rs=2
+ArXiv recentes (últimos 6 meses):
+https://arxiv.org/search/?query={ra}+{dec}&searchtype=all&order=-announced_date_first&size=50
                             """)
                     
                     with tab2:
@@ -915,13 +1052,27 @@ VizieR: https://vizier.u-strasbg.fr/viz-bin/VizieR?-c={ra}+{dec}&-c.rs=2
                         **Dica:** Aguarde confirmação de pelo menos 3 observações independentes!
                         """)
                 
-                elif desc['status'] == 'CANDIDATO':
-                    st.info("**Candidato interessante.** Necessita mais observações para confirmação.")
-                    st.markdown("""
+                elif desc['status'] == 'CONHECIDA':
+                    st.info("""
+                    **Validação bem-sucedida!** 
+                    
+                    Seu sistema detectou corretamente um objeto conhecido, confirmando que:
+                    - ✅ Os algoritmos de detecção estão funcionando
+                    - ✅ A análise de dados está precisa
+                    - ✅ O sistema pode encontrar objetos reais
+                    
+                    Continue procurando em outras estrelas menos estudadas!
+                    """)
+                
+                elif desc['status'] == 'CANDIDATA':
+                    st.warning("""
+                    **Candidato interessante.** Necessita mais observações para confirmação.
+                    
                     **Ações recomendadas:**
                     - Continue monitorando este objeto
                     - Faça mais 2-3 observações
                     - Use diferentes configurações de cadência
+                    - Verifique se o padrão se repete
                     """)
     else:
         st.info("Nenhuma descoberta potencial detectada com os critérios atuais. Objetos detectados parecem corresponder a padrões conhecidos.")
