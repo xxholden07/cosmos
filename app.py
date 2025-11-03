@@ -501,16 +501,28 @@ if buscar:
             # Criar tabela formatada manualmente
             table_data = []
             for meteor in meteors:
-                table_data.append({
-                    'Tempo (dias)': round(meteor['detection_time'], 3),
-                    'Duração (h)': round(meteor['duration_hours'], 4),
-                    'Amplitude': round(meteor['amplitude'], 3),
-                    'Tipo': meteor['event_type'],
-                    'Confiança': f"{round(meteor['confidence'] * 100, 0)}%"
-                })
+                try:
+                    amplitude = float(meteor.get('amplitude', 0))
+                    detection_time = float(meteor.get('detection_time', 0))
+                    duration_hours = float(meteor.get('duration_hours', 0))
+                    confidence = float(meteor.get('confidence', 0))
+                    
+                    table_data.append({
+                        'Tempo (dias)': round(detection_time, 3),
+                        'Duração (h)': round(duration_hours, 4),
+                        'Amplitude': round(amplitude, 3),
+                        'Tipo': meteor.get('event_type', 'desconhecido'),
+                        'Confiança': f"{round(confidence * 100, 0):.0f}%"
+                    })
+                except (ValueError, TypeError, KeyError) as e:
+                    # Pular eventos com dados inválidos
+                    continue
             
-            df_display = pd.DataFrame(table_data)
-            st.dataframe(df_display, use_container_width=True)
+            if table_data:
+                df_display = pd.DataFrame(table_data)
+                st.dataframe(df_display, use_container_width=True)
+            else:
+                st.warning("Não foi possível formatar os dados dos eventos.")
     
     # Detecção de Transientes
     if detect_transients:
