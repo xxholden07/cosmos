@@ -137,11 +137,11 @@ with st.sidebar:
     
     # Análises
     st.subheader("Tipos de Detecção")
-    detect_planets = st.checkbox("🪐 Planetas (trânsitos)", value=True)
-    detect_comets = st.checkbox("☄️ Cometas (variação de brilho)", value=False)
-    detect_meteors = st.checkbox("💫 Meteoros (eventos rápidos)", value=False)
-    detect_transients = st.checkbox("💥 Transientes (supernovas/flares)", value=False)
-    detect_seismo = st.checkbox("🌟 Asterosismologia (vibrações)", value=False)
+    detect_planets = st.checkbox("Planetas (trânsitos)", value=True)
+    detect_comets = st.checkbox("Cometas (variação de brilho)", value=False)
+    detect_meteors = st.checkbox("Meteoros (eventos rápidos)", value=False)
+    detect_transients = st.checkbox("Transientes (supernovas/flares)", value=False)
+    detect_seismo = st.checkbox("Asterosismologia (vibrações)", value=False)
     
     # Botão de busca
     buscar = st.button("Buscar e Analisar", type="primary", use_container_width=True)
@@ -295,7 +295,7 @@ if buscar:
     # Detecção de Cometas
     if detect_comets:
         st.divider()
-        st.subheader("☄️ Detecção de Cometas")
+        st.subheader("Detecção de Cometas")
         
         with st.spinner("Procurando por cometas..."):
             comets = analisar_cometas(time, flux)
@@ -317,11 +317,46 @@ if buscar:
                     
                     if 'velocity_deg_day' in comet:
                         st.info(f"Movimento detectado: {comet['velocity_deg_day']:.6f} °/dia")
+                    
+                    # Visualização do evento
+                    detection_time = comet['detection_time']
+                    window = 20  # dias antes e depois
+                    mask = (time >= detection_time - window) & (time <= detection_time + window)
+                    
+                    if np.any(mask):
+                        fig_comet = go.Figure()
+                        
+                        # Curva de luz completa na janela
+                        fig_comet.add_trace(go.Scatter(
+                            x=time[mask],
+                            y=flux[mask],
+                            mode='lines',
+                            name='Fluxo',
+                            line=dict(color='cyan', width=1)
+                        ))
+                        
+                        # Marcar momento da detecção
+                        fig_comet.add_vline(
+                            x=detection_time,
+                            line_dash="dash",
+                            line_color="red",
+                            annotation_text="Detecção"
+                        )
+                        
+                        fig_comet.update_layout(
+                            template='plotly_dark',
+                            xaxis_title="Tempo (dias)",
+                            yaxis_title="Fluxo",
+                            height=300,
+                            showlegend=False
+                        )
+                        
+                        st.plotly_chart(fig_comet, use_container_width=True)
     
     # Detecção de Meteoros
     if detect_meteors:
         st.divider()
-        st.subheader("💫 Detecção de Meteoros e Eventos Rápidos")
+        st.subheader("Detecção de Meteoros e Eventos Rápidos")
         
         with st.spinner("Procurando eventos rápidos..."):
             meteors = analisar_meteoros(time, flux)
@@ -334,16 +369,94 @@ if buscar:
             df_meteors = pd.DataFrame(meteors)
             df_display = df_meteors[['detection_time', 'duration_hours', 'amplitude', 'event_type', 'confidence']].copy()
             df_display.columns = ['Tempo (dias)', 'Duração (h)', 'Amplitude', 'Tipo', 'Confiança']
-            df_display['Duração (h)'] = df_display['Duração (h)'].round(4)
-            df_display['Amplitude'] = df_display['Amplitude'].round(3)
-            df_display['Confiança'] = (df_display['Confiança'] * 100).round(0)
+            
+            # Converter para numérico e arredondar
+            df_display['Tempo (dias)'] = pd.to_numeric(df_display['Tempo (dias)'], errors='coerce').round(3)
+            df_display['Duração (h)'] = pd.to_numeric(df_display['Duração (h)'], errors='coerce').round(4)
+            df_display['Amplitude'] = pd.to_numeric(df_display['Amplitude'], errors='coerce').round(3)
+            df_display['Confiança'] = (pd.to_numeric(df_display['Confiança'], errors='coerce') * 100).round(0)
             
             st.dataframe(df_display, use_container_width=True)
+            
+            # Visualização de eventos
+            if len(meteors) > 0:
+                st.subheader("Visualização dos Eventos")
+                
+                fig_meteors = go.Figure()
+                
+                # Curva de luz completa
+                fig_meteors.add_trace(go.Scatter(
+                    x=time,
+                    y=flux,
+                    mode='lines',
+                    name='Fluxo',
+                    line=dict(color='lightblue', width=0.5),
+                    opacity=0.5
+                ))
+                
+                # Marcar cada evento detectado
+                for meteor in meteors:
+                    detection_time = meteor['detection_time']
+                    fig_meteors.add_vline(
+                        x=detection_time,
+                        line_dash="solid",
+                        line_color="red",
+                        line_width=2,
+                        opacity=0.7
+                    )
+                
+                fig_meteors.update_layout(
+                    template='plotly_dark',
+                    xaxis_title="Tempo (dias)",
+                    yaxis_title="Fluxo",
+                    height=400,
+                    showlegend=False
+                )
+                
+                st.plotly_chart(fig_meteors, use_container_width=True)
+                
+                # Zoom no primeiro evento
+                if len(meteors) > 0:
+                    st.subheader("Zoom - Primeiro Evento")
+                    first_event = meteors[0]
+                    event_time = first_event['detection_time']
+                    window = 0.5  # meio dia antes e depois
+                    
+                    mask = (time >= event_time - window) & (time <= event_time + window)
+                    
+                    if np.any(mask):
+                        fig_zoom = go.Figure()
+                        
+                        fig_zoom.add_trace(go.Scatter(
+                            x=time[mask],
+                            y=flux[mask],
+                            mode='lines+markers',
+                            name='Fluxo',
+                            line=dict(color='cyan', width=2),
+                            marker=dict(size=4)
+                        ))
+                        
+                        fig_zoom.add_vline(
+                            x=event_time,
+                            line_dash="dash",
+                            line_color="red",
+                            annotation_text=f"Evento ({first_event['duration_hours']:.4f}h)"
+                        )
+                        
+                        fig_zoom.update_layout(
+                            template='plotly_dark',
+                            xaxis_title="Tempo (dias)",
+                            yaxis_title="Fluxo",
+                            height=350,
+                            showlegend=False
+                        )
+                        
+                        st.plotly_chart(fig_zoom, use_container_width=True)
     
     # Detecção de Transientes
     if detect_transients:
         st.divider()
-        st.subheader("💥 Eventos Transientes (Supernovas, Flares)")
+        st.subheader("Eventos Transientes (Supernovas, Flares)")
         
         with st.spinner("Procurando eventos transientes..."):
             transients = analisar_transientes(time, flux)
@@ -364,6 +477,40 @@ if buscar:
                         st.metric("Amplitude", f"{event['amplitude']:.2f} mag")
                     with col4:
                         st.metric("Pico", f"{event['peak_time']:.2f} dias")
+                    
+                    # Visualização do evento
+                    start_t = event['start_time']
+                    end_t = event['end_time']
+                    window = event['duration_days'] * 2  # 2x a duração do evento
+                    
+                    mask = (time >= start_t - window) & (time <= end_t + window)
+                    
+                    if np.any(mask):
+                        fig_trans = go.Figure()
+                        
+                        # Curva de luz na janela
+                        fig_trans.add_trace(go.Scatter(
+                            x=time[mask],
+                            y=flux[mask],
+                            mode='lines',
+                            name='Fluxo',
+                            line=dict(color='cyan', width=1.5)
+                        ))
+                        
+                        # Marcar início, pico e fim
+                        fig_trans.add_vline(x=start_t, line_dash="dot", line_color="green", annotation_text="Início")
+                        fig_trans.add_vline(x=event['peak_time'], line_dash="solid", line_color="red", annotation_text="Pico")
+                        fig_trans.add_vline(x=end_t, line_dash="dot", line_color="orange", annotation_text="Fim")
+                        
+                        fig_trans.update_layout(
+                            template='plotly_dark',
+                            xaxis_title="Tempo (dias)",
+                            yaxis_title="Fluxo",
+                            height=350,
+                            showlegend=False
+                        )
+                        
+                        st.plotly_chart(fig_trans, use_container_width=True)
     
     # Asterosismologia
     if detect_seismo:
