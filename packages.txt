@@ -1,2 +1,1 @@
-# Pacotes do sistema necessários para as dependências Python
-# (normalmente não precisa de nada extra para lightkurve)
+
