@@ -1,4 +1,4 @@
-"""
+ç..,, m   """
 Interface Web - Análise de Dados Cósmicos
 Sistema profissional com dados REAIS do Kepler/TESS
 """
@@ -156,7 +156,15 @@ if buscar:
         st.info("Dicas: Verifique o nome da estrela ou tente outra missão")
         st.stop()
     
-    # Dados já são arrays numpy, prontos para usar
+    # Converter para arrays numpy puros (remover qualquer máscara do Astropy)
+    time = np.asarray(time, dtype=np.float64)
+    flux = np.asarray(flux, dtype=np.float64)
+    
+    # Remover NaN e infinitos
+    valid_mask = np.isfinite(time) & np.isfinite(flux)
+    time = time[valid_mask]
+    flux = flux[valid_mask]
+    
     # Remover outliers básicos
     flux_median = np.median(flux)
     flux_std = np.std(flux)
