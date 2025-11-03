@@ -14,6 +14,10 @@ from plotly.subplots import make_subplots
 from celestial_detector import CelestialBodyDetector
 from stellar_seismology import StellarSeismologyAnalyzer
 from pattern_detector import PatternDetector
+from database import CelestialDatabase
+
+# Inicializar banco de dados
+db = CelestialDatabase()
 
 # Configuração da página
 st.set_page_config(
@@ -39,22 +43,26 @@ st.markdown("""
 # Cache para dados - retorna arrays simples em vez de objetos complexos
 @st.cache_data(ttl=3600, show_spinner=False)
 def buscar_estrela(nome_estrela, missao, cadencia):
-    """Busca dados de estrela no Kepler/TESS e retorna arrays numpy"""
+    """Busca dados de estrela no Kepler/TESS e retorna arrays numpy + coordenadas"""
     try:
         search_result = lk.search_lightcurve(nome_estrela, author=missao, cadence=cadencia)
         if len(search_result) == 0:
-            return None, None, "Estrela não encontrada"
+            return None, None, None, None, "Estrela não encontrada"
         
         lc_collection = search_result.download_all()
         lc = lc_collection.stitch()
         
-        # Retornar arrays numpy (serializáveis) em vez do objeto LightCurve
+        # Retornar arrays numpy (serializáveis) e coordenadas
         time = lc.time.value
         flux = lc.flux.value
         
-        return time, flux, None
+        # Obter coordenadas (RA, Dec)
+        ra = lc.ra if hasattr(lc, 'ra') else None
+        dec = lc.dec if hasattr(lc, 'dec') else None
+        
+        return time, flux, ra, dec, None
     except Exception as e:
-        return None, None, str(e)
+        return None, None, None, None, str(e)
 
 @st.cache_data(show_spinner=False)
 def analisar_planetas(time, flux):
@@ -92,6 +100,122 @@ def analisar_vibrações(time, flux, cadence):
     seismo = StellarSeismologyAnalyzer()
     analysis = seismo.analyze_stellar_vibrations(time, flux, cadence=cadence)
     return analysis
+
+def criar_mapa_ceu(ra, dec, nome_estrela):
+    """Cria mapa do céu mostrando localização do objeto"""
+    if ra is None or dec is None:
+        return None
+    
+    # Criar grade de coordenadas ao redor do objeto
+    ra_grid = np.linspace(ra - 5, ra + 5, 100)
+    dec_grid = np.linspace(dec - 5, dec + 5, 100)
+    
+    fig = go.Figure()
+    
+    # Adicionar ponto do objeto
+    fig.add_trace(go.Scatter(
+        x=[ra],
+        y=[dec],
+        mode='markers+text',
+        marker=dict(size=20, color='red', symbol='star'),
+        text=[nome_estrela],
+        textposition='top center',
+        textfont=dict(size=14, color='red'),
+        name='Objeto Alvo'
+    ))
+    
+    fig.update_layout(
+        template='plotly_dark',
+        xaxis_title="Ascensão Reta (graus)",
+        yaxis_title="Declinação (graus)",
+        height=400,
+        showlegend=True,
+        xaxis=dict(range=[ra - 5, ra + 5]),
+        yaxis=dict(range=[dec - 5, dec + 5])
+    )
+    
+    return fig
+
+def verificar_novidade(planetas, cometas, meteoros, nome_estrela):
+    """Analisa se as detecções podem ser descobertas novas"""
+    descobertas_potenciais = []
+    
+    # Verificar planetas
+    if planetas and len(planetas) > 0:
+        for i, p in enumerate(planetas):
+            # Critérios para possível descoberta:
+            # 1. Alta confiança (>70%)
+            # 2. Período não comum (evitar artefatos)
+            # 3. Profundidade significativa
+            if p['confidence'] > 70 and 0.5 < p['period_days'] < 50:
+                descobertas_potenciais.append({
+                    'tipo': 'Planeta',
+                    'indice': i + 1,
+                    'confianca': p['confidence'],
+                    'parametros': f"Período: {p['period_days']:.2f}d, Raio: {np.sqrt(p['transit_depth'])*109:.1f}R⊕",
+                    'status': 'NOVO' if p['confidence'] > 85 else 'CANDIDATO'
+                })
+    
+    # Verificar cometas
+    if cometas and len(cometas) > 0:
+        for i, c in enumerate(cometas):
+            if c['confidence'] > 0.8:
+                descobertas_potenciais.append({
+                    'tipo': 'Cometa/Evento Variável',
+                    'indice': i + 1,
+                    'confianca': c['confidence'] * 100,
+                    'parametros': f"Aumento: {c['brightness_increase']*100:.1f}%",
+                    'status': 'NOVO'
+                })
+    
+    # Verificar meteoros/transientes
+    if meteoros and len(meteoros) > 0:
+        eventos_rapidos = [m for m in meteoros if m.get('confidence', 0) > 0.7]
+        if len(eventos_rapidos) > 0:
+            descobertas_potenciais.append({
+                'tipo': 'Eventos Transientes Rápidos',
+                'indice': len(eventos_rapidos),
+                'confianca': np.mean([m.get('confidence', 0) for m in eventos_rapidos]) * 100,
+                'parametros': f"{len(eventos_rapidos)} eventos detectados",
+                'status': 'ANALISAR'
+            })
+    
+    return descobertas_potenciais
+
+def salvar_monitoramento(nome_estrela, resultados, ra, dec):
+    """Salva resultados no banco de dados"""
+    try:
+        # Salvar objeto
+        objeto_id = db.salvar_objeto(nome_estrela, ra if ra else 0.0, dec if dec else 0.0, resultados.get('missao', 'Unknown'))
+        
+        # Salvar observação
+        observacao_id = db.salvar_observacao(
+            objeto_id,
+            resultados.get('cadencia', 'unknown'),
+            resultados.get('pontos_dados', 0),
+            resultados.get('periodo_dias', 0)
+        )
+        
+        # Salvar detecções
+        if 'planetas' in resultados and resultados['planetas']:
+            db.salvar_planetas(observacao_id, resultados['planetas'])
+        
+        if 'cometas' in resultados and resultados['cometas']:
+            db.salvar_cometas(observacao_id, resultados['cometas'])
+        
+        if 'meteoros' in resultados and resultados['meteoros']:
+            db.salvar_meteoros(observacao_id, resultados['meteoros'])
+        
+        if 'transientes' in resultados and resultados['transientes']:
+            db.salvar_transientes(observacao_id, resultados['transientes'])
+        
+        if 'descobertas' in resultados and resultados['descobertas']:
+            db.salvar_descobertas(observacao_id, resultados['descobertas'])
+        
+        return True
+    except Exception as e:
+        print(f"Erro ao salvar no banco: {e}")
+        return False
 
 # Título
 st.title("Análise de Dados Astronômicos Reais")
@@ -143,13 +267,24 @@ with st.sidebar:
     detect_transients = st.checkbox("Transientes (supernovas/flares)", value=False)
     detect_seismo = st.checkbox("Asterosismologia (vibrações)", value=False)
     
+    st.divider()
+    
+    # Opção de monitoramento
+    st.subheader("Monitoramento")
+    enable_monitoring = st.checkbox("Ativar monitoramento", value=True, 
+                                    help="Salva resultados no banco de dados para comparação futura")
+    
+    # Botão para ver histórico
+    if st.button("Ver Histórico/Estatísticas", use_container_width=True):
+        st.session_state['mostrar_historico'] = True
+    
     # Botão de busca
     buscar = st.button("Buscar e Analisar", type="primary", use_container_width=True)
 
 # Área principal
 if buscar:
     with st.spinner(f"Buscando dados de {nome_estrela}..."):
-        time, flux, erro = buscar_estrela(nome_estrela, missao, cadencia)
+        time, flux, ra, dec, erro = buscar_estrela(nome_estrela, missao, cadencia)
     
     if erro:
         st.error(f"Erro ao buscar dados: {erro}")
@@ -184,6 +319,35 @@ if buscar:
         st.metric("Cadência", cadencia)
     with col4:
         st.metric("Missão", missao)
+    
+    # Mapa do céu
+    if ra is not None and dec is not None:
+        st.divider()
+        st.subheader("Localização no Céu")
+        
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            fig_mapa = criar_mapa_ceu(ra, dec, nome_estrela)
+            if fig_mapa:
+                st.plotly_chart(fig_mapa, use_container_width=True)
+        
+        with col2:
+            st.metric("Ascensão Reta (RA)", f"{ra:.4f}°")
+            st.metric("Declinação (Dec)", f"{dec:.4f}°")
+            
+            # Converter para coordenadas sexagesimais
+            ra_h = int(ra / 15)
+            ra_m = int((ra / 15 - ra_h) * 60)
+            ra_s = ((ra / 15 - ra_h) * 60 - ra_m) * 60
+            
+            dec_sign = '+' if dec >= 0 else '-'
+            dec_d = int(abs(dec))
+            dec_m = int((abs(dec) - dec_d) * 60)
+            dec_s = ((abs(dec) - dec_d) * 60 - dec_m) * 60
+            
+            st.info(f"**Coordenadas (J2000)**\n\n"
+                   f"RA: {ra_h:02d}h {ra_m:02d}m {ra_s:05.2f}s\n\n"
+                   f"Dec: {dec_sign}{dec_d:02d}° {dec_m:02d}' {dec_s:05.2f}\"")
     
     st.divider()
     
@@ -663,6 +827,129 @@ if buscar:
             df_display_modes.columns = ['Frequência (μHz)', 'Tipo', 'Ordem']
             
             st.dataframe(df_display_modes, use_container_width=True)
+    
+    # ANÁLISE DE DESCOBERTAS POTENCIAIS
+    st.divider()
+    st.header("Análise de Descobertas")
+    
+    # Coletar todas as detecções
+    planetas_detectados = analisar_planetas(time, flux) if detect_planets else []
+    cometas_detectados = analisar_cometas(time, flux) if detect_comets else []
+    meteoros_detectados = analisar_meteoros(time, flux) if detect_meteors else []
+    
+    descobertas = verificar_novidade(planetas_detectados, cometas_detectados, meteoros_detectados, nome_estrela)
+    
+    if len(descobertas) > 0:
+        st.warning(f"**ATENÇÃO: {len(descobertas)} possíveis descobertas ou objetos de interesse detectados!**")
+        
+        for desc in descobertas:
+            status_color = "🔴" if desc['status'] == 'NOVO' else "🟡" if desc['status'] == 'CANDIDATO' else "🔵"
+            
+            with st.expander(f"{status_color} {desc['tipo']} #{desc['indice']} - Status: {desc['status']}"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("Confiança", f"{desc['confianca']:.1f}%")
+                with col2:
+                    st.metric("Status", desc['status'])
+                
+                st.info(f"**Parâmetros:** {desc['parametros']}")
+                
+                if desc['status'] == 'NOVO':
+                    st.success("**Potencial descoberta!** Este objeto apresenta características únicas e alta confiança. Recomenda-se análise detalhada e verificação com catálogos profissionais.")
+                elif desc['status'] == 'CANDIDATO':
+                    st.info("**Candidato interessante.** Necessita mais observações para confirmação.")
+    else:
+        st.info("Nenhuma descoberta potencial detectada com os critérios atuais. Objetos detectados parecem corresponder a padrões conhecidos.")
+    
+    # Sistema de Monitoramento
+    if enable_monitoring:
+        st.divider()
+        st.subheader("Sistema de Monitoramento")
+        
+        resultados_monitoramento = {
+            'missao': missao,
+            'cadencia': cadencia,
+            'pontos_dados': len(time),
+            'periodo_dias': float(time[-1] - time[0]),
+            'planetas': planetas_detectados,
+            'cometas': cometas_detectados,
+            'meteoros': meteoros_detectados,
+            'transientes': analisar_transientes(time, flux) if detect_transients else [],
+            'descobertas': descobertas
+        }
+        
+        sucesso = salvar_monitoramento(nome_estrela, resultados_monitoramento, ra, dec)
+        
+        if sucesso:
+            st.success("✓ Dados salvos no banco de dados!")
+            
+            # Mostrar estatísticas
+            historico = db.obter_historico_objeto(nome_estrela)
+            if historico:
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Total de Observações", historico['objeto']['total_observacoes'])
+                with col2:
+                    st.metric("Planetas Detectados", len(historico['planetas']))
+                with col3:
+                    st.metric("Descobertas Potenciais", len(historico['descobertas']))
+        else:
+            st.error("Erro ao salvar no banco de dados")
+
+# Seção de Histórico e Estatísticas
+if 'mostrar_historico' in st.session_state and st.session_state['mostrar_historico']:
+    st.divider()
+    st.header("Histórico e Estatísticas do Banco de Dados")
+    
+    # Estatísticas gerais
+    stats = db.estatisticas_gerais()
+    
+    st.subheader("Estatísticas Gerais")
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Objetos Monitorados", stats['total_objetos'])
+    with col2:
+        st.metric("Total de Observações", stats['total_observacoes'])
+    with col3:
+        st.metric("Planetas Detectados", stats['total_planetas'])
+    with col4:
+        st.metric("Planetas Novos", stats['planetas_novos'], delta=f"+{stats['planetas_novos']}")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Cometas", stats['total_cometas'])
+    with col2:
+        st.metric("Meteoros", stats['total_meteoros'])
+    with col3:
+        st.metric("Descobertas Novas", stats['descobertas_novas'], delta=f"+{stats['descobertas_novas']}")
+    with col4:
+        st.metric("Candidatos", stats['candidatos'], delta=f"+{stats['candidatos']}")
+    
+    # Lista de descobertas
+    st.subheader("Últimas Descobertas Potenciais")
+    descobertas_db = db.listar_descobertas_novas(limit=20)
+    
+    if descobertas_db:
+        for desc in descobertas_db:
+            status_color = "🔴" if desc['status'] == 'NOVO' else "🟡"
+            with st.expander(f"{status_color} {desc['nome']} - {desc['tipo']} (Confiança: {desc['confianca']:.1f}%)"):
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.write(f"**Status:** {desc['status']}")
+                    st.write(f"**Tipo:** {desc['tipo']}")
+                with col2:
+                    st.write(f"**RA:** {desc['ra']:.4f}°")
+                    st.write(f"**Dec:** {desc['dec']:.4f}°")
+                with col3:
+                    st.write(f"**Data:** {desc['timestamp']}")
+                
+                st.info(f"**Parâmetros:** {desc['parametros']}")
+    else:
+        st.info("Nenhuma descoberta potencial registrada ainda")
+    
+    if st.button("Fechar Histórico"):
+        st.session_state['mostrar_historico'] = False
+        st.rerun()
 
 else:
     # Página inicial
