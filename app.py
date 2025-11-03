@@ -16,10 +16,16 @@ from stellar_seismology import StellarSeismologyAnalyzer
 from pattern_detector import PatternDetector
 from database import CelestialDatabase
 from simbad_checker import SimbadChecker
+from cds_professional import CDSProfessionalChecker
+from sonificador import SonificadorEstelar
+from alvos_promissores import GeradorAlvosPromissores
 
-# Inicializar banco de dados e verificador SIMBAD
+# Inicializar banco de dados e verificadores
 db = CelestialDatabase()
 simbad = SimbadChecker(radius_arcmin=2.0)
+cds_pro = CDSProfessionalChecker(radius_arcsec=120)
+sonificador = SonificadorEstelar()
+gerador_alvos = GeradorAlvosPromissores()
 
 # Configuração da página
 st.set_page_config(
@@ -29,15 +35,94 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# CSS customizado
+# CSS customizado - TEMA ESCURO
 st.markdown("""
 <style>
-    .stAlert {margin-top: 1rem;}
+    /* Tema escuro global */
+    .stApp {
+        background-color: #0e1117;
+        color: #fafafa;
+    }
+    
+    /* Sidebar escura */
+    [data-testid="stSidebar"] {
+        background-color: #161b22;
+    }
+    
+    /* Métricas */
+    [data-testid="stMetricValue"] {
+        color: #58a6ff;
+        font-size: 2rem;
+    }
+    
+    /* Alertas e info boxes */
+    .stAlert {
+        margin-top: 1rem;
+        background-color: #161b22;
+        border-left: 4px solid #58a6ff;
+    }
+    
+    /* Cards de métricas */
     .metric-card {
         background: #1e1e1e;
         padding: 1rem;
         border-radius: 0.5rem;
         border: 1px solid #333;
+    }
+    
+    /* Expanders */
+    .streamlit-expanderHeader {
+        background-color: #161b22;
+        border: 1px solid #30363d;
+    }
+    
+    /* Tabelas */
+    .dataframe {
+        background-color: #0d1117;
+        color: #c9d1d9;
+    }
+    
+    /* Botões */
+    .stButton>button {
+        background-color: #238636;
+        color: white;
+        border: none;
+        border-radius: 6px;
+    }
+    
+    .stButton>button:hover {
+        background-color: #2ea043;
+    }
+    
+    /* Links */
+    a {
+        color: #58a6ff;
+    }
+    
+    a:hover {
+        color: #79c0ff;
+    }
+    
+    /* Code blocks */
+    code {
+        background-color: #161b22;
+        color: #79c0ff;
+        padding: 2px 6px;
+        border-radius: 3px;
+    }
+    
+    /* Tabs */
+    .stTabs [data-baseweb="tab-list"] {
+        background-color: #0d1117;
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        color: #8b949e;
+    }
+    
+    .stTabs [aria-selected="true"] {
+        color: #58a6ff;
+        border-bottom-color: #58a6ff;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -104,43 +189,133 @@ def analisar_vibrações(time, flux, cadence):
     return analysis
 
 def criar_mapa_ceu(ra, dec, nome_estrela):
-    """Cria mapa do céu mostrando localização do objeto"""
+    """Cria mapa do céu mostrando localização do objeto (estilo SIMBAD)"""
     if ra is None or dec is None:
         return None
     
-    # Criar grade de coordenadas ao redor do objeto
-    ra_grid = np.linspace(ra - 5, ra + 5, 100)
-    dec_grid = np.linspace(dec - 5, dec + 5, 100)
+    # Criar grade de coordenadas ao redor do objeto (raio de 5 graus)
+    ra_min, ra_max = ra - 5, ra + 5
+    dec_min, dec_max = dec - 5, dec + 5
+    
+    # Grade de fundo (estilo SIMBAD)
+    ra_grid = np.linspace(ra_min, ra_max, 50)
+    dec_grid = np.linspace(dec_min, dec_max, 50)
     
     fig = go.Figure()
     
-    # Adicionar ponto do objeto
+    # Adicionar grade de fundo (linhas RA)
+    for ra_line in np.linspace(ra_min, ra_max, 11):
+        fig.add_trace(go.Scatter(
+            x=[ra_line, ra_line],
+            y=[dec_min, dec_max],
+            mode='lines',
+            line=dict(color='#30363d', width=0.5, dash='dot'),
+            showlegend=False,
+            hoverinfo='skip'
+        ))
+    
+    # Adicionar grade de fundo (linhas Dec)
+    for dec_line in np.linspace(dec_min, dec_max, 11):
+        fig.add_trace(go.Scatter(
+            x=[ra_min, ra_max],
+            y=[dec_line, dec_line],
+            mode='lines',
+            line=dict(color='#30363d', width=0.5, dash='dot'),
+            showlegend=False,
+            hoverinfo='skip'
+        ))
+    
+    # Adicionar círculo indicando raio de busca (2 arcmin = 0.0333 graus)
+    theta = np.linspace(0, 2*np.pi, 100)
+    radius_deg = 2 / 60  # 2 arcmin em graus
+    circle_ra = ra + radius_deg * np.cos(theta)
+    circle_dec = dec + radius_deg * np.sin(theta)
+    
+    fig.add_trace(go.Scatter(
+        x=circle_ra,
+        y=circle_dec,
+        mode='lines',
+        line=dict(color='#58a6ff', width=2, dash='dash'),
+        name='Raio de busca (2 arcmin)',
+        hoverinfo='name'
+    ))
+    
+    # Adicionar ponto do objeto alvo (estilo SIMBAD)
     fig.add_trace(go.Scatter(
         x=[ra],
         y=[dec],
         mode='markers+text',
-        marker=dict(size=20, color='red', symbol='star'),
+        marker=dict(
+            size=20,
+            color='#ff4444',
+            symbol='star',
+            line=dict(color='#ffffff', width=2)
+        ),
         text=[nome_estrela],
         textposition='top center',
-        textfont=dict(size=14, color='red'),
-        name='Objeto Alvo'
+        textfont=dict(size=14, color='#ff4444', family='Arial Black'),
+        name='Objeto Alvo',
+        hovertemplate=f'<b>{nome_estrela}</b><br>RA: {ra:.6f}°<br>Dec: {dec:.6f}°<extra></extra>'
+    ))
+    
+    # Adicionar cruz de mira no centro
+    fig.add_trace(go.Scatter(
+        x=[ra-0.5, ra+0.5, None, ra, ra],
+        y=[dec, dec, None, dec-0.5, dec+0.5],
+        mode='lines',
+        line=dict(color='#ff4444', width=1),
+        showlegend=False,
+        hoverinfo='skip'
     ))
     
     fig.update_layout(
         template='plotly_dark',
-        xaxis_title="Ascensão Reta (graus)",
-        yaxis_title="Declinação (graus)",
-        height=400,
+        plot_bgcolor='#0d1117',
+        paper_bgcolor='#0d1117',
+        xaxis_title="Ascensão Reta (J2000) [graus]",
+        yaxis_title="Declinação (J2000) [graus]",
+        height=500,
         showlegend=True,
-        xaxis=dict(range=[ra - 5, ra + 5]),
-        yaxis=dict(range=[dec - 5, dec + 5])
+        legend=dict(
+            yanchor="top",
+            y=0.99,
+            xanchor="right",
+            x=0.99,
+            bgcolor='rgba(22, 27, 34, 0.8)',
+            bordercolor='#30363d',
+            borderwidth=1
+        ),
+        xaxis=dict(
+            range=[ra_max, ra_min],  # Invertido (estilo astronômico)
+            gridcolor='#21262d',
+            showgrid=True,
+            zeroline=False
+        ),
+        yaxis=dict(
+            range=[dec_min, dec_max],
+            gridcolor='#21262d',
+            showgrid=True,
+            zeroline=False,
+            scaleanchor="x",
+            scaleratio=1
+        ),
+        font=dict(color='#c9d1d9'),
+        title=dict(
+            text=f"Localização Celeste - {nome_estrela}",
+            font=dict(size=18, color='#58a6ff'),
+            x=0.5,
+            xanchor='center'
+        )
     )
     
     return fig
 
-def verificar_novidade(planetas, cometas, meteoros, nome_estrela, ra=None, dec=None):
-    """Analisa se as detecções podem ser descobertas novas (com verificação SIMBAD)"""
+def verificar_novidade(planetas, cometas, meteoros, nome_estrela, ra=None, dec=None, modo='rapido'):
+    """Analisa se as detecções podem ser descobertas novas (com verificação SIMBAD ou CDS profissional)"""
     descobertas_potenciais = []
+    
+    # Determinar qual verificador usar
+    usar_cds_pro = (modo == 'profissional' and ra is not None and dec is not None)
     
     # Verificar planetas
     if planetas and len(planetas) > 0:
@@ -156,18 +331,28 @@ def verificar_novidade(planetas, cometas, meteoros, nome_estrela, ra=None, dec=N
                     'confianca': p['confidence'],
                     'parametros': f"Período: {p['period_days']:.2f}d, Raio: {np.sqrt(p['transit_depth'])*109:.1f}R⊕",
                     'status': 'NOVO' if p['confidence'] > 85 else 'CANDIDATO',
-                    'simbad': None
+                    'simbad': None,
+                    'cds_profissional': None
                 }
                 
-                # Verificar no SIMBAD se temos coordenadas
+                # Verificar no SIMBAD/CDS
                 if ra is not None and dec is not None:
                     try:
-                        resultado_simbad = simbad.verificar_coordenadas(ra, dec)
-                        classificacao = simbad.classificar_descoberta(resultado_simbad, p['confidence'])
-                        descoberta['simbad'] = resultado_simbad
-                        descoberta['status'] = classificacao['status']
-                        descoberta['prioridade'] = classificacao['prioridade']
-                        descoberta['recomendacao_simbad'] = classificacao['recomendacao']
+                        if usar_cds_pro:
+                            # Modo profissional
+                            resultado_cds = cds_pro.verificacao_completa(ra, dec, tipo_deteccao='planeta')
+                            descoberta['cds_profissional'] = resultado_cds
+                            descoberta['status'] = resultado_cds['classificacao_final']['status']
+                            descoberta['prioridade'] = resultado_cds['classificacao_final']['prioridade']
+                            descoberta['recomendacao_simbad'] = resultado_cds['classificacao_final']['mensagem']
+                        else:
+                            # Modo rápido
+                            resultado_simbad = simbad.verificar_coordenadas(ra, dec)
+                            classificacao = simbad.classificar_descoberta(resultado_simbad, p['confidence'])
+                            descoberta['simbad'] = resultado_simbad
+                            descoberta['status'] = classificacao['status']
+                            descoberta['prioridade'] = classificacao['prioridade']
+                            descoberta['recomendacao_simbad'] = classificacao['recomendacao']
                     except Exception as e:
                         descoberta['simbad_erro'] = str(e)
                 
@@ -183,18 +368,26 @@ def verificar_novidade(planetas, cometas, meteoros, nome_estrela, ra=None, dec=N
                     'confianca': c['confidence'] * 100,
                     'parametros': f"Aumento: {c['brightness_increase']*100:.1f}%",
                     'status': 'NOVO',
-                    'simbad': None
+                    'simbad': None,
+                    'cds_profissional': None
                 }
                 
-                # Verificar no SIMBAD
+                # Verificar no SIMBAD/CDS
                 if ra is not None and dec is not None:
                     try:
-                        resultado_simbad = simbad.verificar_coordenadas(ra, dec)
-                        classificacao = simbad.classificar_descoberta(resultado_simbad, c['confidence'] * 100)
-                        descoberta['simbad'] = resultado_simbad
-                        descoberta['status'] = classificacao['status']
-                        descoberta['prioridade'] = classificacao['prioridade']
-                        descoberta['recomendacao_simbad'] = classificacao['recomendacao']
+                        if usar_cds_pro:
+                            resultado_cds = cds_pro.verificacao_completa(ra, dec, tipo_deteccao='variavel')
+                            descoberta['cds_profissional'] = resultado_cds
+                            descoberta['status'] = resultado_cds['classificacao_final']['status']
+                            descoberta['prioridade'] = resultado_cds['classificacao_final']['prioridade']
+                            descoberta['recomendacao_simbad'] = resultado_cds['classificacao_final']['mensagem']
+                        else:
+                            resultado_simbad = simbad.verificar_coordenadas(ra, dec)
+                            classificacao = simbad.classificar_descoberta(resultado_simbad, c['confidence'] * 100)
+                            descoberta['simbad'] = resultado_simbad
+                            descoberta['status'] = classificacao['status']
+                            descoberta['prioridade'] = classificacao['prioridade']
+                            descoberta['recomendacao_simbad'] = classificacao['recomendacao']
                     except Exception as e:
                         descoberta['simbad_erro'] = str(e)
                 
@@ -210,19 +403,28 @@ def verificar_novidade(planetas, cometas, meteoros, nome_estrela, ra=None, dec=N
                 'confianca': np.mean([m.get('confidence', 0) for m in eventos_rapidos]) * 100,
                 'parametros': f"{len(eventos_rapidos)} eventos detectados",
                 'status': 'ANALISAR',
-                'simbad': None
+                'simbad': None,
+                'cds_profissional': None
             }
             
-            # Verificar no SIMBAD
+            # Verificar no SIMBAD/CDS
             if ra is not None and dec is not None:
                 try:
                     confianca_media = np.mean([m.get('confidence', 0) for m in eventos_rapidos]) * 100
-                    resultado_simbad = simbad.verificar_coordenadas(ra, dec)
-                    classificacao = simbad.classificar_descoberta(resultado_simbad, confianca_media)
-                    descoberta['simbad'] = resultado_simbad
-                    descoberta['status'] = classificacao['status']
-                    descoberta['prioridade'] = classificacao.get('prioridade', 2)
-                    descoberta['recomendacao_simbad'] = classificacao['recomendacao']
+                    
+                    if usar_cds_pro:
+                        resultado_cds = cds_pro.verificacao_completa(ra, dec, tipo_deteccao='transiente')
+                        descoberta['cds_profissional'] = resultado_cds
+                        descoberta['status'] = resultado_cds['classificacao_final']['status']
+                        descoberta['prioridade'] = resultado_cds['classificacao_final'].get('prioridade', 2)
+                        descoberta['recomendacao_simbad'] = resultado_cds['classificacao_final']['mensagem']
+                    else:
+                        resultado_simbad = simbad.verificar_coordenadas(ra, dec)
+                        classificacao = simbad.classificar_descoberta(resultado_simbad, confianca_media)
+                        descoberta['simbad'] = resultado_simbad
+                        descoberta['status'] = classificacao['status']
+                        descoberta['prioridade'] = classificacao.get('prioridade', 2)
+                        descoberta['recomendacao_simbad'] = classificacao['recomendacao']
                 except Exception as e:
                     descoberta['simbad_erro'] = str(e)
             
@@ -273,6 +475,14 @@ st.markdown("Sistema de análise usando dados do Kepler e TESS")
 with st.sidebar:
     st.header("Configurações")
     
+    # NOVA SEÇÃO: Alvos Promissores
+    st.subheader("🎯 Alvos Promissores")
+    
+    if st.button("Ver Alvos Recomendados", use_container_width=True):
+        st.session_state['mostrar_alvos'] = True
+    
+    st.divider()
+    
     # Seleção de missão
     missao = st.selectbox(
         "Missão Espacial",
@@ -299,7 +509,13 @@ with st.sidebar:
         nome_base = exemplo.split(" ")[0]
         nome_estrela = st.text_input("Nome da Estrela", value=nome_base)
     else:
-        nome_estrela = st.text_input("Nome da Estrela", value="Kepler-10")
+        # Verificar se tem alvo pré-selecionado
+        valor_padrao = st.session_state.get('nome_estrela_preenchido', 'Kepler-10')
+        nome_estrela = st.text_input("Nome da Estrela", value=valor_padrao)
+        
+        # Limpar após uso
+        if 'nome_estrela_preenchido' in st.session_state:
+            del st.session_state['nome_estrela_preenchido']
     
     cadencia = st.selectbox(
         "Cadência",
@@ -314,6 +530,16 @@ with st.sidebar:
     detect_meteors = st.checkbox("Meteoros (eventos rápidos)", value=False)
     detect_transients = st.checkbox("Transientes (supernovas/flares)", value=False)
     detect_seismo = st.checkbox("Asterosismologia (vibrações)", value=False)
+    
+    st.divider()
+    
+    # Opção de verificação profissional
+    st.subheader("Verificação de Descobertas")
+    modo_verificacao = st.radio(
+        "Modo de Verificação",
+        ["Rápido (HTTP)", "Profissional (Astroquery CDS)"],
+        help="Rápido: HTTP direto ao SIMBAD. Profissional: APIs oficiais da CDS (SIMBAD + VizieR + catálogos especializados)"
+    )
     
     st.divider()
     
@@ -422,6 +648,31 @@ if buscar:
     )
     
     st.plotly_chart(fig_lc, use_container_width=True)
+    
+    # NOVA SEÇÃO: Sonificação da Curva de Luz
+    st.divider()
+    st.subheader("🔊 Sonificação - Ouça as Ondulações")
+    
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        st.info(sonificador.descrever_sonificacao('curva_luz'))
+    
+    with col2:
+        duracao_audio = st.slider("Duração do áudio (s)", 5, 30, 10, key='duracao_curva')
+        if st.button("🎵 Gerar Áudio da Curva de Luz", use_container_width=True):
+            with st.spinner("Gerando áudio..."):
+                audio_data, sample_rate = sonificador.sonificar_curva_luz(
+                    time, flux, duracao_segundos=duracao_audio
+                )
+                audio_bytes = sonificador.criar_wav_bytes(audio_data, sample_rate)
+                
+                st.audio(audio_bytes, format='audio/wav')
+                st.download_button(
+                    label="⬇️ Baixar Áudio",
+                    data=audio_bytes,
+                    file_name=f"{nome_estrela}_curva_luz.wav",
+                    mime="audio/wav"
+                )
     
     # Análise de Planetas
     if detect_planets:
@@ -862,6 +1113,32 @@ if buscar:
         
         st.plotly_chart(fig_power, use_container_width=True)
         
+        # SONIFICAÇÃO DAS VIBRAÇÕES
+        st.divider()
+        st.subheader("🔊 Ouça as Vibrações Estelares")
+        
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            st.info(sonificador.descrever_sonificacao('vibracoes'))
+        
+        with col2:
+            duracao_vibr = st.slider("Duração (s)", 5, 20, 10, key='duracao_vibr')
+            if st.button("🎵 Gerar Áudio das Vibrações", use_container_width=True):
+                with st.spinner("Sintetizando frequências estelares..."):
+                    audio_vibr, sr_vibr = sonificador.sonificar_vibracoes(
+                        frequencies, power, duracao_segundos=duracao_vibr
+                    )
+                    audio_vibr_bytes = sonificador.criar_wav_bytes(audio_vibr, sr_vibr)
+                    
+                    st.audio(audio_vibr_bytes, format='audio/wav')
+                    st.download_button(
+                        label="⬇️ Baixar Áudio",
+                        data=audio_vibr_bytes,
+                        file_name=f"{nome_estrela}_vibracoes.wav",
+                        mime="audio/wav",
+                        key='download_vibr'
+                    )
+        
         # Modos de oscilação
         modes = seismo_analysis['oscillation_modes']
         if len(modes) > 0:
@@ -885,16 +1162,31 @@ if buscar:
     cometas_detectados = analisar_cometas(time, flux) if detect_comets else []
     meteoros_detectados = analisar_meteoros(time, flux) if detect_meteors else []
     
-    # Verificar com SIMBAD (passar coordenadas)
-    with st.spinner("Verificando descobertas no SIMBAD..."):
-        descobertas = verificar_novidade(
-            planetas_detectados, 
-            cometas_detectados, 
-            meteoros_detectados, 
-            nome_estrela,
-            ra,  # passar coordenadas
-            dec
-        )
+    # Verificar com SIMBAD (passar coordenadas e modo)
+    usar_modo_profissional = (modo_verificacao == "Profissional (Astroquery CDS)")
+    
+    if usar_modo_profissional:
+        with st.spinner("Verificando em múltiplos catálogos profissionais (SIMBAD + VizieR + NASA)..."):
+            descobertas = verificar_novidade(
+                planetas_detectados, 
+                cometas_detectados, 
+                meteoros_detectados, 
+                nome_estrela,
+                ra,
+                dec,
+                modo='profissional'
+            )
+    else:
+        with st.spinner("Verificando descobertas no SIMBAD..."):
+            descobertas = verificar_novidade(
+                planetas_detectados, 
+                cometas_detectados, 
+                meteoros_detectados, 
+                nome_estrela,
+                ra,
+                dec,
+                modo='rapido'
+            )
     
     if len(descobertas) > 0:
         st.warning(f"**ATENÇÃO: {len(descobertas)} possíveis descobertas ou objetos de interesse detectados!**")
@@ -933,7 +1225,7 @@ if buscar:
                 # Mostrar resultado SIMBAD
                 if 'simbad' in desc and desc['simbad']:
                     st.divider()
-                    st.subheader("Verificação SIMBAD")
+                    st.subheader("Verificação SIMBAD (Modo Rápido)")
                     
                     resultado_simbad = desc['simbad']
                     
@@ -967,6 +1259,49 @@ if buscar:
                         url_simbad = resultado_simbad.get('url_busca', '')
                         if url_simbad:
                             st.markdown(f"[🔗 Ver no SIMBAD]({url_simbad})")
+                
+                # Mostrar resultado CDS Profissional
+                if 'cds_profissional' in desc and desc['cds_profissional']:
+                    st.divider()
+                    st.subheader("🎓 Verificação Profissional CDS")
+                    
+                    resultado_cds = desc['cds_profissional']
+                    
+                    # Relatório completo
+                    relatorio = cds_pro.gerar_relatorio_profissional(resultado_cds)
+                    st.markdown(relatorio)
+                    
+                    # Detalhes adicionais em expanders
+                    if resultado_cds['simbad']['total_objetos'] > 0:
+                        with st.expander("Ver todos os objetos SIMBAD encontrados"):
+                            for obj in resultado_cds['simbad']['objetos']:
+                                st.markdown(f"""
+**{obj['nome']}**
+- Tipo: {obj['tipo']}
+- Separação: {obj['separacao_arcsec']:.2f} arcsec
+- Mag V: {obj['mag_v'] if obj['mag_v'] else 'N/A'}
+- Referências: {obj['referencias']}
+                                """)
+                                st.divider()
+                    
+                    # Exoplanetas
+                    if resultado_cds['exoplanetas'] and resultado_cds['exoplanetas']['total_planetas'] > 0:
+                        with st.expander(f"Ver {resultado_cds['exoplanetas']['total_planetas']} planetas conhecidos"):
+                            for planeta in resultado_cds['exoplanetas']['planetas']:
+                                st.json(planeta['dados'])
+                    
+                    # Variáveis
+                    if resultado_cds['variaveis'] and resultado_cds['variaveis']['total_variaveis'] > 0:
+                        with st.expander(f"Ver {resultado_cds['variaveis']['total_variaveis']} estrelas variáveis"):
+                            for var in resultado_cds['variaveis']['variaveis']:
+                                periodo_str = f"{var['periodo']:.2f}d" if var['periodo'] else 'N/A'
+                                st.markdown(f"""
+**{var['nome']}**
+- Tipo: {var['tipo']}
+- Período: {periodo_str}
+- Amplitude: {var['max_mag']:.2f} - {var['min_mag']:.2f} mag
+                                """)
+                                st.divider()
                 
                 # Recomendação do sistema
                 if 'recomendacao_simbad' in desc:
@@ -1233,6 +1568,131 @@ https://exoplanetarchive.ipac.caltech.edu/cgi-bin/nstedAPI/nph-nstedAPI?table=ex
     
     if st.button("Fechar Histórico"):
         st.session_state['mostrar_historico'] = False
+        st.rerun()
+
+# Seção de Alvos Promissores
+if 'mostrar_alvos' in st.session_state and st.session_state['mostrar_alvos']:
+    st.divider()
+    st.header("🎯 Alvos Promissores para Descobertas")
+    
+    st.info("""
+    **Estes alvos têm maior potencial de revelar descobertas novas!**
+    
+    - Estrelas pouco estudadas (menos referências)
+    - Regiões menos exploradas do campo Kepler/TESS  
+    - Sistemas com comportamentos anômalos conhecidos
+    - KIC/TIC de alto número (estatisticamente menos analisados)
+    """)
+    
+    # Tabs para categorias
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "⭐ Alta Prioridade",
+        "🎲 Kepler Aleatórios",
+        "🛰️ TESS Aleatórios",
+        "📍 Coordenadas Especiais"
+    ])
+    
+    with tab1:
+        st.subheader("Alvos de Alta Prioridade")
+        st.warning("**Estes são os alvos MAIS promissores para descobertas únicas!**")
+        
+        alvos_alta = [
+            {
+                'nome': 'KIC 8462852',
+                'missao': 'Kepler',
+                'razao': '🌟 **Estrela de Tabby** - A mais misteriosa conhecida! Variações de até 22% no brilho',
+                'prioridade': 5,
+                'dica': 'Use cadência "short" para capturar eventos rápidos'
+            },
+            {
+                'nome': 'KIC 9832227',
+                'missao': 'Kepler',
+                'razao': '💥 **Candidata a fusão estelar** - Sistema binário com período orbital diminuindo',
+                'prioridade': 5,
+                'dica': 'Pode ser evento único na história da astronomia!'
+            },
+            {
+                'nome': 'KIC 12557548',
+                'missao': 'Kepler',
+                'razao': '🪐 **Planeta evaporando** - Trânsitos extremamente variáveis',
+                'prioridade': 5,
+                'dica': 'Planeta em desintegração - padrões únicos'
+            },
+            {
+                'nome': 'TIC 400799224',
+                'missao': 'TESS',
+                'razao': '🌑 **Disintegrating planet candidate** - Dados TESS recentes',
+                'prioridade': 5,
+                'dica': 'Dados novos - possível descoberta não publicada ainda'
+            },
+        ]
+        
+        for alvo in alvos_alta:
+            with st.expander(f"{'⭐' * alvo['prioridade']} {alvo['nome']} - Prioridade {alvo['prioridade']}/5"):
+                st.markdown(alvo['razao'])
+                st.info(f"**Dica:** {alvo['dica']}")
+                
+                if st.button(f"Usar '{alvo['nome']}'", key=f"usar_{alvo['nome']}"):
+                    st.session_state['nome_estrela_preenchido'] = alvo['nome']
+                    st.session_state['missao_selecionada'] = alvo['missao']
+                    st.session_state['mostrar_alvos'] = False
+                    st.success(f"✅ '{alvo['nome']}' selecionado! Role para cima e clique em 'Buscar e Analisar'")
+    
+    with tab2:
+        st.subheader("Alvos Kepler Aleatórios")
+        st.info("KICs de alto número - estatisticamente menos estudados")
+        
+        alvos_kepler = gerador_alvos.gerar_alvos_kepler(20)
+        
+        for i, alvo in enumerate(alvos_kepler):
+            col1, col2, col3 = st.columns([2, 1, 1])
+            with col1:
+                st.write(f"**{alvo['nome']}**")
+            with col2:
+                st.write(f"Prioridade: {alvo['prioridade']}/5")
+            with col3:
+                if st.button("Usar", key=f"usar_kepler_{i}"):
+                    st.session_state['nome_estrela_preenchido'] = alvo['nome']
+                    st.session_state['missao_selecionada'] = 'Kepler'
+                    st.session_state['mostrar_alvos'] = False
+                    st.success(f"✅ Selecionado! Role para cima.")
+    
+    with tab3:
+        st.subheader("Alvos TESS Aleatórios")
+        st.info("TICs de alto número - dados mais recentes, maior chance de descobertas não publicadas")
+        
+        alvos_tess = gerador_alvos.gerar_alvos_tess(20)
+        
+        for i, alvo in enumerate(alvos_tess):
+            col1, col2, col3 = st.columns([2, 1, 1])
+            with col1:
+                st.write(f"**{alvo['nome']}**")
+            with col2:
+                st.write(f"Prioridade: {alvo['prioridade']}/5")
+            with col3:
+                if st.button("Usar", key=f"usar_tess_{i}"):
+                    st.session_state['nome_estrela_preenchido'] = alvo['nome']
+                    st.session_state['missao_selecionada'] = 'TESS'
+                    st.session_state['mostrar_alvos'] = False
+                    st.success(f"✅ Selecionado! Role para cima.")
+    
+    with tab4:
+        st.subheader("Coordenadas Especiais")
+        st.info("Regiões menos exploradas do campo Kepler")
+        
+        alvos_coord = gerador_alvos.gerar_coordenadas_aleatorias_kepler(15)
+        
+        for i, alvo in enumerate(alvos_coord):
+            with st.expander(f"📍 Região {i+1}: RA={alvo['ra']:.4f}°, Dec={alvo['dec']:.4f}°"):
+                st.write(f"**Coordenadas:** {alvo['coordenadas']}")
+                st.write(f"**Razão:** {alvo['razao']}")
+                st.code(f"RA: {alvo['ra']:.6f}°\nDec: {alvo['dec']:.6f}°")
+                
+                if st.button(f"Usar coordenadas", key=f"usar_coord_{i}"):
+                    st.info("Use estas coordenadas diretamente na busca do lightkurve")
+    
+    if st.button("Fechar Alvos"):
+        st.session_state['mostrar_alvos'] = False
         st.rerun()
 
 else:
