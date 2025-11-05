@@ -471,6 +471,164 @@ def salvar_monitoramento(nome_estrela, resultados, ra, dec):
 st.title("Análise de Dados Astronômicos Reais")
 st.markdown("Sistema de análise usando dados do Kepler e TESS")
 
+# =====================================
+# EXPLORADOR DE DADOS DISPONÍVEIS
+# =====================================
+if st.session_state.get('mostrar_explorador', False):
+    st.markdown("---")
+    st.header("📊 Explorar Dados Disponíveis")
+    
+    col_fechar, col_vazio = st.columns([1, 5])
+    with col_fechar:
+        if st.button("❌ Fechar"):
+            st.session_state['mostrar_explorador'] = False
+            st.rerun()
+    
+    tabs = st.tabs(["🔭 Kepler - Exoplanetas", "🌟 TESS - Novos Dados", "🎯 Casos Famosos", "🔍 Buscar por Tipo"])
+    
+    # TAB 1: Kepler - Exoplanetas Confirmados
+    with tabs[0]:
+        st.subheader("Estrelas Kepler com Planetas Confirmados")
+        st.markdown("Estes são exemplos **REAIS** de sistemas planetários descobertos pelo Kepler:")
+        
+        kepler_planetas = pd.DataFrame({
+            'Nome': ['Kepler-10', 'Kepler-11', 'Kepler-16', 'Kepler-22', 'Kepler-62', 'Kepler-90', 'Kepler-186', 'Kepler-442', 'Kepler-452'],
+            'Planetas': [2, 6, 1, 1, 5, 8, 5, 1, 1],
+            'Nota': [
+                'Primeiro planeta rochoso (Kepler-10b)',
+                'Sistema compacto com 6 planetas',
+                'Planeta circumbinário (2 sóis!)',
+                'Primeiro na zona habitável',
+                '5 planetas, 2 na zona habitável',
+                'RECORDE: 8 planetas (mini sistema solar)',
+                'Primeiro planeta tamanho Terra em zona habitável',
+                'Super-Terra na zona habitável',
+                'Primo da Terra (zona habitável, estrela tipo Sol)'
+            ],
+            'KIC': ['KIC 11904151', 'KIC 6541920', 'KIC 12644769', 'KIC 10593626', 'KIC 9002278', 'KIC 11442793', 'KIC 8120608', 'KIC 9603725', 'KIC 10666592']
+        })
+        
+        st.dataframe(kepler_planetas, use_container_width=True, hide_index=True)
+        
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            estrela_selecionada = st.selectbox("Escolha uma estrela para analisar:", kepler_planetas['Nome'].tolist(), key="kepler_sel")
+        with col2:
+            if st.button("🔍 Analisar Esta Estrela", use_container_width=True):
+                st.session_state['nome_estrela_preenchido'] = estrela_selecionada
+                st.session_state['missao_selecionada'] = 'Kepler'
+                st.session_state['mostrar_explorador'] = False
+                st.rerun()
+    
+    # TAB 2: TESS - Dados Recentes
+    with tabs[1]:
+        st.subheader("Dados TESS - Missão Mais Recente")
+        st.markdown("TESS (2018-presente) está descobrindo **NOVOS** planetas:")
+        
+        tess_exemplos = pd.DataFrame({
+            'Nome': ['TOI-700', 'TOI-1452', 'TOI-270', 'TOI-178', 'HD 21749', 'LTT 1445A', 'GJ 357'],
+            'Status': ['Confirmado', 'Candidato', 'Confirmado', 'Confirmado', 'Confirmado', 'Confirmado', 'Confirmado'],
+            'Nota': [
+                'Planeta tamanho Terra em zona habitável',
+                'Mundo oceânico (água!)',
+                '3 planetas, 1 super-Terra',
+                '6 planetas em ressonância',
+                'Sub-Netuno (36 dias)',
+                'Sistema triplo com planetas',
+                'Super-Terra + 2 candidatos'
+            ],
+            'TIC': ['TIC 150428135', 'TIC 301256664', 'TIC 259377017', 'TIC 52368076', 'TIC 12422937', 'TIC 87998380', 'TIC 109820622']
+        })
+        
+        st.dataframe(tess_exemplos, use_container_width=True, hide_index=True)
+        
+        st.info("💡 **Dica:** TESS tem dados mais recentes! Maior chance de fazer novas descobertas.")
+        
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            estrela_selecionada_tess = st.selectbox("Escolha uma estrela TESS:", tess_exemplos['Nome'].tolist(), key="tess_sel")
+        with col2:
+            if st.button("🔍 Analisar TESS", use_container_width=True):
+                st.session_state['nome_estrela_preenchido'] = estrela_selecionada_tess
+                st.session_state['missao_selecionada'] = 'TESS'
+                st.session_state['mostrar_explorador'] = False
+                st.rerun()
+    
+    # TAB 3: Casos Famosos
+    with tabs[2]:
+        st.subheader("⭐ Objetos Astronômicos Famosos")
+        
+        famosos = pd.DataFrame({
+            'Nome': ['KIC 8462852', 'KIC 9832227', 'KIC 12557548', 'HD 209458', 'WASP-12'],
+            'Apelido': ['Estrela de Tabby', 'Estrela da Fusão', 'Planeta Evaporante', 'Osiris', 'Planeta Condenado'],
+            'Fenômeno': [
+                '🔥 MISTÉRIO: Escurecimentos de até 22%! Mega-estrutura alienígena?',
+                '💥 Pode colidir/fundir em 2022 (PREVISTO!)',
+                '☄️ Planeta se desintegrando em tempo real',
+                '🌡️ Primeiro trânsito planetário detectado (2000)',
+                '🕳️ Sendo devorado por sua estrela'
+            ],
+            'Missão': ['Kepler', 'Kepler', 'Kepler', 'Kepler/TESS', 'TESS']
+        })
+        
+        st.dataframe(famosos, use_container_width=True, hide_index=True)
+        
+        st.warning("⚠️ **ATENÇÃO:** Estes objetos têm comportamento EXTREMO e ÚNICO!")
+        
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            estrela_famosa = st.selectbox("Escolha um caso famoso:", famosos['Nome'].tolist(), key="famoso_sel")
+        with col2:
+            if st.button("🔥 Analisar Caso Famoso", use_container_width=True):
+                st.session_state['nome_estrela_preenchido'] = estrela_famosa
+                # Determinar missão
+                idx = famosos[famosos['Nome'] == estrela_famosa].index[0]
+                st.session_state['missao_selecionada'] = famosos.iloc[idx]['Missão'].split('/')[0]
+                st.session_state['mostrar_explorador'] = False
+                st.rerun()
+    
+    # TAB 4: Buscar por Tipo
+    with tabs[3]:
+        st.subheader("🔍 Buscar por Tipo de Objeto")
+        
+        tipo = st.selectbox("Tipo de objeto que procura:", [
+            "Planetas rochosos (tipo Terra)",
+            "Hot Jupiters (gigantes próximos)",
+            "Planetas em zona habitável",
+            "Sistemas multi-planetários",
+            "Estrelas variáveis",
+            "Estrelas binárias eclipsantes",
+            "Eventos de microlente gravitacional"
+        ])
+        
+        if tipo == "Planetas rochosos (tipo Terra)":
+            sugestoes = ['Kepler-10b', 'Kepler-20e', 'Kepler-20f', 'Kepler-78b', 'Kepler-186f']
+        elif tipo == "Hot Jupiters (gigantes próximos)":
+            sugestoes = ['HD 209458', 'WASP-12', 'Kepler-7b', 'HAT-P-7b', 'CoRoT-1b']
+        elif tipo == "Planetas em zona habitável":
+            sugestoes = ['Kepler-22b', 'Kepler-62e', 'Kepler-62f', 'Kepler-186f', 'Kepler-442b', 'Kepler-452b']
+        elif tipo == "Sistemas multi-planetários":
+            sugestoes = ['Kepler-11', 'Kepler-90', 'Kepler-62', 'Kepler-186', 'TRAPPIST-1']
+        elif tipo == "Estrelas variáveis":
+            sugestoes = ['KIC 11904151', 'KIC 8462852', 'KIC 9832227', 'RR Lyrae', 'Delta Cephei']
+        elif tipo == "Estrelas binárias eclipsantes":
+            sugestoes = ['Kepler-16', 'Kepler-34', 'Kepler-35', 'Kepler-38', 'Algol']
+        else:
+            sugestoes = ['MOA-2011-BLG-293', 'OGLE-2016-BLG-1190']
+        
+        st.markdown("**Exemplos deste tipo:**")
+        for sug in sugestoes:
+            st.markdown(f"- {sug}")
+        
+        nome_busca = st.text_input("Ou digite o nome completo:", key="busca_tipo")
+        if st.button("🎯 Buscar Este Objeto", use_container_width=True):
+            if nome_busca:
+                st.session_state['nome_estrela_preenchido'] = nome_busca
+                st.session_state['mostrar_explorador'] = False
+                st.rerun()
+    
+    st.markdown("---")
+
 # Sidebar
 with st.sidebar:
     st.header("Configurações")
@@ -493,6 +651,10 @@ with st.sidebar:
     # Input da estrela
     st.subheader("Buscar Estrela")
     
+    # Botão para explorar dados disponíveis
+    if st.button("📊 Explorar Dados Disponíveis", use_container_width=True):
+        st.session_state['mostrar_explorador'] = True
+    
     # Exemplos rápidos
     exemplo = st.selectbox(
         "Exemplos de estrelas",
@@ -501,7 +663,10 @@ with st.sidebar:
             "Kepler-10 (2 planetas confirmados)",
             "Kepler-90 (8 planetas!)",
             "KIC 11904151 (oscilações)",
-            "HD 209458 (Hot Jupiter)"
+            "HD 209458 (Hot Jupiter)",
+            "Kepler-16 (planeta circumbinário)",
+            "Kepler-22 (zona habitável)",
+            "KIC 8462852 (Estrela de Tabby)"
         ]
     )
     
