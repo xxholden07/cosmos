@@ -508,13 +508,13 @@ if st.session_state.get('mostrar_explorador', False):
             'KIC': ['KIC 11904151', 'KIC 6541920', 'KIC 12644769', 'KIC 10593626', 'KIC 9002278', 'KIC 11442793', 'KIC 8120608', 'KIC 9603725', 'KIC 10666592']
         })
         
-        st.dataframe(kepler_planetas, use_container_width=True, hide_index=True)
+        st.dataframe(kepler_planetas, width="stretch", hide_index=True)
         
         col1, col2 = st.columns([2, 1])
         with col1:
             estrela_selecionada = st.selectbox("Escolha uma estrela para analisar:", kepler_planetas['Nome'].tolist(), key="kepler_sel")
         with col2:
-            if st.button("🔍 Analisar Esta Estrela", use_container_width=True):
+            if st.button("🔍 Analisar Esta Estrela", width="stretch"):
                 st.session_state['nome_estrela_preenchido'] = estrela_selecionada
                 st.session_state['missao_selecionada'] = 'Kepler'
                 st.session_state['mostrar_explorador'] = False
@@ -540,7 +540,7 @@ if st.session_state.get('mostrar_explorador', False):
             'TIC': ['TIC 150428135', 'TIC 301256664', 'TIC 259377017', 'TIC 52368076', 'TIC 12422937', 'TIC 87998380', 'TIC 109820622']
         })
         
-        st.dataframe(tess_exemplos, use_container_width=True, hide_index=True)
+        st.dataframe(tess_exemplos, width="stretch", hide_index=True)
         
         st.info("💡 **Dica:** TESS tem dados mais recentes! Maior chance de fazer novas descobertas.")
         
@@ -548,7 +548,7 @@ if st.session_state.get('mostrar_explorador', False):
         with col1:
             estrela_selecionada_tess = st.selectbox("Escolha uma estrela TESS:", tess_exemplos['Nome'].tolist(), key="tess_sel")
         with col2:
-            if st.button("🔍 Analisar TESS", use_container_width=True):
+            if st.button("🔍 Analisar TESS", width="stretch"):
                 st.session_state['nome_estrela_preenchido'] = estrela_selecionada_tess
                 st.session_state['missao_selecionada'] = 'TESS'
                 st.session_state['mostrar_explorador'] = False
@@ -571,7 +571,7 @@ if st.session_state.get('mostrar_explorador', False):
             'Missão': ['Kepler', 'Kepler', 'Kepler', 'Kepler/TESS', 'TESS']
         })
         
-        st.dataframe(famosos, use_container_width=True, hide_index=True)
+        st.dataframe(famosos, width="stretch", hide_index=True)
         
         st.warning("⚠️ **ATENÇÃO:** Estes objetos têm comportamento EXTREMO e ÚNICO!")
         
@@ -579,7 +579,7 @@ if st.session_state.get('mostrar_explorador', False):
         with col1:
             estrela_famosa = st.selectbox("Escolha um caso famoso:", famosos['Nome'].tolist(), key="famoso_sel")
         with col2:
-            if st.button("🔥 Analisar Caso Famoso", use_container_width=True):
+            if st.button("🔥 Analisar Caso Famoso", width="stretch"):
                 st.session_state['nome_estrela_preenchido'] = estrela_famosa
                 # Determinar missão
                 idx = famosos[famosos['Nome'] == estrela_famosa].index[0]
@@ -621,7 +621,7 @@ if st.session_state.get('mostrar_explorador', False):
             st.markdown(f"- {sug}")
         
         nome_busca = st.text_input("Ou digite o nome completo:", key="busca_tipo")
-        if st.button("🎯 Buscar Este Objeto", use_container_width=True):
+        if st.button("🎯 Buscar Este Objeto", width="stretch"):
             if nome_busca:
                 st.session_state['nome_estrela_preenchido'] = nome_busca
                 st.session_state['mostrar_explorador'] = False
@@ -636,7 +636,7 @@ with st.sidebar:
     # NOVA SEÇÃO: Alvos Promissores
     st.subheader("🎯 Alvos Promissores")
     
-    if st.button("Ver Alvos Recomendados", use_container_width=True):
+    if st.button("Ver Alvos Recomendados", width="stretch"):
         st.session_state['mostrar_alvos'] = True
     
     st.divider()
@@ -652,7 +652,7 @@ with st.sidebar:
     st.subheader("Buscar Estrela")
     
     # Botão para explorar dados disponíveis
-    if st.button("📊 Explorar Dados Disponíveis", use_container_width=True):
+    if st.button("📊 Explorar Dados Disponíveis", width="stretch"):
         st.session_state['mostrar_explorador'] = True
     
     # Exemplos rápidos
@@ -714,11 +714,11 @@ with st.sidebar:
                                     help="Salva resultados no banco de dados para comparação futura")
     
     # Botão para ver histórico
-    if st.button("Ver Histórico/Estatísticas", use_container_width=True):
+    if st.button("Ver Histórico/Estatísticas", width="stretch"):
         st.session_state['mostrar_historico'] = True
     
     # Botão de busca
-    buscar = st.button("Buscar e Analisar", type="primary", use_container_width=True)
+    buscar = st.button("Buscar e Analisar", type="primary", width="stretch")
 
 # Área principal
 if buscar:
@@ -768,7 +768,7 @@ if buscar:
         with col1:
             fig_mapa = criar_mapa_ceu(ra, dec, nome_estrela)
             if fig_mapa:
-                st.plotly_chart(fig_mapa, use_container_width=True)
+                st.plotly_chart(fig_mapa, width="stretch")
         
         with col2:
             st.metric("Ascensão Reta (RA)", f"{ra:.4f}°")
@@ -812,7 +812,7 @@ if buscar:
         showlegend=False
     )
     
-    st.plotly_chart(fig_lc, use_container_width=True)
+    st.plotly_chart(fig_lc, width="stretch")
     
     # NOVA SEÇÃO: Sonificação da Curva de Luz
     st.divider()
@@ -824,7 +824,7 @@ if buscar:
     
     with col2:
         duracao_audio = st.slider("Duração do áudio (s)", 5, 30, 10, key='duracao_curva')
-        if st.button("🎵 Gerar Áudio da Curva de Luz", use_container_width=True):
+        if st.button("🎵 Gerar Áudio da Curva de Luz", width="stretch"):
             with st.spinner("Gerando áudio..."):
                 audio_data, sample_rate = sonificador.sonificar_curva_luz(
                     time, flux, duracao_segundos=duracao_audio
@@ -872,7 +872,7 @@ if buscar:
                 'Raio (R⊕)', 'Confiança (%)'
             ]
             
-            st.dataframe(df_display, use_container_width=True)
+            st.dataframe(df_display, width="stretch")
             
             # Gráfico de curva dobrada (phase-folded)
             if len(planets) > 0:
@@ -904,7 +904,7 @@ if buscar:
                     showlegend=False
                 )
                 
-                st.plotly_chart(fig_phase, use_container_width=True)
+                st.plotly_chart(fig_phase, width="stretch")
                 
                 # Detalhes do planeta
                 col1, col2, col3 = st.columns(3)
@@ -991,7 +991,7 @@ if buscar:
                         showlegend=False
                     )
                     
-                    st.plotly_chart(fig_comet, use_container_width=True)
+                    st.plotly_chart(fig_comet, width="stretch")
             
             # Outros cometas em expanders
             if len(comets) > 1:
@@ -1042,7 +1042,7 @@ if buscar:
                             showlegend=False
                         )
                         
-                        st.plotly_chart(fig_comet, use_container_width=True)
+                        st.plotly_chart(fig_comet, width="stretch")
     
     # Detecção de Meteoros
     if detect_meteors:
@@ -1091,7 +1091,7 @@ if buscar:
                 showlegend=False
             )
             
-            st.plotly_chart(fig_meteors, use_container_width=True)
+            st.plotly_chart(fig_meteors, width="stretch")
             
             # Zoom no primeiro evento
             st.subheader("Zoom - Primeiro Evento")
@@ -1128,7 +1128,7 @@ if buscar:
                     showlegend=False
                 )
                 
-                st.plotly_chart(fig_zoom, use_container_width=True)
+                st.plotly_chart(fig_zoom, width="stretch")
             
             # Tabela de dados
             st.subheader("Dados dos Eventos")
@@ -1156,7 +1156,7 @@ if buscar:
             
             if table_data:
                 df_display = pd.DataFrame(table_data)
-                st.dataframe(df_display, use_container_width=True)
+                st.dataframe(df_display, width="stretch")
             else:
                 st.warning("Não foi possível formatar os dados dos eventos.")
     
@@ -1217,7 +1217,7 @@ if buscar:
                             showlegend=False
                         )
                         
-                        st.plotly_chart(fig_trans, use_container_width=True)
+                        st.plotly_chart(fig_trans, width="stretch")
     
     # Asterosismologia
     if detect_seismo:
@@ -1276,7 +1276,7 @@ if buscar:
             showlegend=False
         )
         
-        st.plotly_chart(fig_power, use_container_width=True)
+        st.plotly_chart(fig_power, width="stretch")
         
         # SONIFICAÇÃO DAS VIBRAÇÕES
         st.divider()
@@ -1288,7 +1288,7 @@ if buscar:
         
         with col2:
             duracao_vibr = st.slider("Duração (s)", 5, 20, 10, key='duracao_vibr')
-            if st.button("🎵 Gerar Áudio das Vibrações", use_container_width=True):
+            if st.button("🎵 Gerar Áudio das Vibrações", width="stretch"):
                 with st.spinner("Sintetizando frequências estelares..."):
                     audio_vibr, sr_vibr = sonificador.sonificar_vibracoes(
                         frequencies, power, duracao_segundos=duracao_vibr
@@ -1316,7 +1316,7 @@ if buscar:
             df_display_modes = df_modes[['frequency_uHz', 'type', 'mode_order']].copy()
             df_display_modes.columns = ['Frequência (μHz)', 'Tipo', 'Ordem']
             
-            st.dataframe(df_display_modes, use_container_width=True)
+            st.dataframe(df_display_modes, width="stretch")
     
     # ANÁLISE DE DESCOBERTAS POTENCIAIS
     st.divider()
