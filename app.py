@@ -22,6 +22,7 @@ _simbad = None
 _cds_pro = None
 _sonificador = None
 _gerador_alvos = None
+_exoplanet_api = None
 
 def get_database():
     global _db
@@ -29,6 +30,13 @@ def get_database():
         from database import CelestialDatabase
         _db = CelestialDatabase()
     return _db
+
+def get_exoplanet_api():
+    global _exoplanet_api
+    if _exoplanet_api is None:
+        from exoplanet_api import ExoplanetAPI
+        _exoplanet_api = ExoplanetAPI()
+    return _exoplanet_api
 
 def get_simbad_checker():
     global _simbad
@@ -69,15 +77,39 @@ st.set_page_config(
 # CSS customizado - TEMA ESCURO
 st.markdown("""
 <style>
+    /* Fonte global - Melhor legibilidade */
+    * {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
+    }
+    
     /* Tema escuro global */
     .stApp {
         background-color: #0e1117;
         color: #fafafa;
     }
     
-    /* Sidebar escura */
+    /* Sidebar escura com texto legível */
     [data-testid="stSidebar"] {
         background-color: #161b22;
+    }
+    
+    [data-testid="stSidebar"] * {
+        font-size: 14px !important;
+        line-height: 1.5 !important;
+    }
+    
+    [data-testid="stSidebar"] h1,
+    [data-testid="stSidebar"] h2,
+    [data-testid="stSidebar"] h3 {
+        font-size: 18px !important;
+        font-weight: 600 !important;
+        margin-top: 1rem !important;
+        margin-bottom: 0.5rem !important;
+    }
+    
+    [data-testid="stSidebar"] label {
+        font-size: 13px !important;
+        font-weight: 500 !important;
     }
     
     /* Métricas */
@@ -665,7 +697,15 @@ if st.session_state.get('mostrar_explorador', False):
 with st.sidebar:
     st.header("Configurações")
     
-    # NOVA SEÇÃO: Alvos Promissores
+    # NOVA SEÇÃO: Exoplanet Archive
+    st.subheader("🪐 Exoplanet Archive")
+    
+    if st.button("Buscar Exoplanetas (NASA)", use_container_width=True):
+        st.session_state['mostrar_exoplanets'] = True
+    
+    st.divider()
+    
+    # SEÇÃO: Alvos Promissores
     st.subheader("🎯 Alvos Promissores")
     
     if st.button("Ver Alvos Recomendados", use_container_width=True):
@@ -1766,6 +1806,12 @@ https://exoplanetarchive.ipac.caltech.edu/cgi-bin/nstedAPI/nph-nstedAPI?table=ex
     if st.button("Fechar Histórico"):
         st.session_state['mostrar_historico'] = False
         st.rerun()
+
+# Seção de Exoplanet Archive
+if 'mostrar_exoplanets' in st.session_state and st.session_state['mostrar_exoplanets']:
+    from ui_exoplanet_archive import render_exoplanet_archive_ui
+    api = get_exoplanet_api()
+    render_exoplanet_archive_ui(api)
 
 # Seção de Alvos Promissores
 if 'mostrar_alvos' in st.session_state and st.session_state['mostrar_alvos']:
