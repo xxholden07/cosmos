@@ -11,21 +11,52 @@ import plotly.express as px
 import lightkurve as lk
 from plotly.subplots import make_subplots
 
+# Imports principais (manter leve)
+# Módulos pesados serão carregados apenas quando necessário
 from celestial_detector import CelestialBodyDetector
 from stellar_seismology import StellarSeismologyAnalyzer
-from pattern_detector import PatternDetector
-from database import CelestialDatabase
-from simbad_checker import SimbadChecker
-from cds_professional import CDSProfessionalChecker
-from sonificador import SonificadorEstelar
-from alvos_promissores import GeradorAlvosPromissores
 
-# Inicializar banco de dados e verificadores
-db = CelestialDatabase()
-simbad = SimbadChecker(radius_arcmin=2.0)
-cds_pro = CDSProfessionalChecker(radius_arcsec=120)
-sonificador = SonificadorEstelar()
-gerador_alvos = GeradorAlvosPromissores()
+# Lazy loading para módulos pesados
+_db = None
+_simbad = None
+_cds_pro = None
+_sonificador = None
+_gerador_alvos = None
+
+def get_database():
+    global _db
+    if _db is None:
+        from database import CelestialDatabase
+        _db = CelestialDatabase()
+    return _db
+
+def get_simbad_checker():
+    global _simbad
+    if _simbad is None:
+        from simbad_checker import SimbadChecker
+        _simbad = SimbadChecker(radius_arcmin=2.0)
+    return _simbad
+
+def get_cds_checker():
+    global _cds_pro
+    if _cds_pro is None:
+        from cds_professional import CDSProfessionalChecker
+        _cds_pro = CDSProfessionalChecker(radius_arcsec=120)
+    return _cds_pro
+
+def get_sonificador():
+    global _sonificador
+    if _sonificador is None:
+        from sonificador import SonificadorEstelar
+        _sonificador = SonificadorEstelar()
+    return _sonificador
+
+def get_gerador_alvos():
+    global _gerador_alvos
+    if _gerador_alvos is None:
+        from alvos_promissores import GeradorAlvosPromissores
+        _gerador_alvos = GeradorAlvosPromissores()
+    return _gerador_alvos
 
 # Configuração da página
 st.set_page_config(
@@ -128,7 +159,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Cache para dados - retorna arrays simples em vez de objetos complexos
-@st.cache_data(ttl=3600, show_spinner=False)
+# Aumentar TTL e limitar tamanho do cache para economizar memória
+@st.cache_data(ttl=7200, show_spinner=False, max_entries=5)
 def buscar_estrela(nome_estrela, missao, cadencia):
     """Busca dados de estrela no Kepler/TESS e retorna arrays numpy + coordenadas"""
     try:
@@ -340,15 +372,15 @@ def verificar_novidade(planetas, cometas, meteoros, nome_estrela, ra=None, dec=N
                     try:
                         if usar_cds_pro:
                             # Modo profissional
-                            resultado_cds = cds_pro.verificacao_completa(ra, dec, tipo_deteccao='planeta')
+                            resultado_cds = get_cds_checker().verificacao_completa(ra, dec, tipo_deteccao='planeta')
                             descoberta['cds_profissional'] = resultado_cds
                             descoberta['status'] = resultado_cds['classificacao_final']['status']
                             descoberta['prioridade'] = resultado_cds['classificacao_final']['prioridade']
                             descoberta['recomendacao_simbad'] = resultado_cds['classificacao_final']['mensagem']
                         else:
                             # Modo rápido
-                            resultado_simbad = simbad.verificar_coordenadas(ra, dec)
-                            classificacao = simbad.classificar_descoberta(resultado_simbad, p['confidence'])
+                            resultado_simbad = get_simbad_checker().verificar_coordenadas(ra, dec)
+                            classificacao = get_simbad_checker().classificar_descoberta(resultado_simbad, p['confidence'])
                             descoberta['simbad'] = resultado_simbad
                             descoberta['status'] = classificacao['status']
                             descoberta['prioridade'] = classificacao['prioridade']
@@ -376,14 +408,14 @@ def verificar_novidade(planetas, cometas, meteoros, nome_estrela, ra=None, dec=N
                 if ra is not None and dec is not None:
                     try:
                         if usar_cds_pro:
-                            resultado_cds = cds_pro.verificacao_completa(ra, dec, tipo_deteccao='variavel')
+                            resultado_cds = get_cds_checker().verificacao_completa(ra, dec, tipo_deteccao='variavel')
                             descoberta['cds_profissional'] = resultado_cds
                             descoberta['status'] = resultado_cds['classificacao_final']['status']
                             descoberta['prioridade'] = resultado_cds['classificacao_final']['prioridade']
                             descoberta['recomendacao_simbad'] = resultado_cds['classificacao_final']['mensagem']
                         else:
-                            resultado_simbad = simbad.verificar_coordenadas(ra, dec)
-                            classificacao = simbad.classificar_descoberta(resultado_simbad, c['confidence'] * 100)
+                            resultado_simbad = get_simbad_checker().verificar_coordenadas(ra, dec)
+                            classificacao = get_simbad_checker().classificar_descoberta(resultado_simbad, c['confidence'] * 100)
                             descoberta['simbad'] = resultado_simbad
                             descoberta['status'] = classificacao['status']
                             descoberta['prioridade'] = classificacao['prioridade']
@@ -413,14 +445,14 @@ def verificar_novidade(planetas, cometas, meteoros, nome_estrela, ra=None, dec=N
                     confianca_media = np.mean([m.get('confidence', 0) for m in eventos_rapidos]) * 100
                     
                     if usar_cds_pro:
-                        resultado_cds = cds_pro.verificacao_completa(ra, dec, tipo_deteccao='transiente')
+                        resultado_cds = get_cds_checker().verificacao_completa(ra, dec, tipo_deteccao='transiente')
                         descoberta['cds_profissional'] = resultado_cds
                         descoberta['status'] = resultado_cds['classificacao_final']['status']
                         descoberta['prioridade'] = resultado_cds['classificacao_final'].get('prioridade', 2)
                         descoberta['recomendacao_simbad'] = resultado_cds['classificacao_final']['mensagem']
                     else:
-                        resultado_simbad = simbad.verificar_coordenadas(ra, dec)
-                        classificacao = simbad.classificar_descoberta(resultado_simbad, confianca_media)
+                        resultado_simbad = get_simbad_checker().verificar_coordenadas(ra, dec)
+                        classificacao = get_simbad_checker().classificar_descoberta(resultado_simbad, confianca_media)
                         descoberta['simbad'] = resultado_simbad
                         descoberta['status'] = classificacao['status']
                         descoberta['prioridade'] = classificacao.get('prioridade', 2)
@@ -436,10 +468,10 @@ def salvar_monitoramento(nome_estrela, resultados, ra, dec):
     """Salva resultados no banco de dados"""
     try:
         # Salvar objeto
-        objeto_id = db.salvar_objeto(nome_estrela, ra if ra else 0.0, dec if dec else 0.0, resultados.get('missao', 'Unknown'))
+        objeto_id = get_database().salvar_objeto(nome_estrela, ra if ra else 0.0, dec if dec else 0.0, resultados.get('missao', 'Unknown'))
         
         # Salvar observação
-        observacao_id = db.salvar_observacao(
+        observacao_id = get_database().salvar_observacao(
             objeto_id,
             resultados.get('cadencia', 'unknown'),
             resultados.get('pontos_dados', 0),
@@ -448,19 +480,19 @@ def salvar_monitoramento(nome_estrela, resultados, ra, dec):
         
         # Salvar detecções
         if 'planetas' in resultados and resultados['planetas']:
-            db.salvar_planetas(observacao_id, resultados['planetas'])
+            get_database().salvar_planetas(observacao_id, resultados['planetas'])
         
         if 'cometas' in resultados and resultados['cometas']:
-            db.salvar_cometas(observacao_id, resultados['cometas'])
+            get_database().salvar_cometas(observacao_id, resultados['cometas'])
         
         if 'meteoros' in resultados and resultados['meteoros']:
-            db.salvar_meteoros(observacao_id, resultados['meteoros'])
+            get_database().salvar_meteoros(observacao_id, resultados['meteoros'])
         
         if 'transientes' in resultados and resultados['transientes']:
-            db.salvar_transientes(observacao_id, resultados['transientes'])
+            get_database().salvar_transientes(observacao_id, resultados['transientes'])
         
         if 'descobertas' in resultados and resultados['descobertas']:
-            db.salvar_descobertas(observacao_id, resultados['descobertas'])
+            get_database().salvar_descobertas(observacao_id, resultados['descobertas'])
         
         return True
     except Exception as e:
@@ -820,16 +852,16 @@ if buscar:
     
     col1, col2 = st.columns([2, 1])
     with col1:
-        st.info(sonificador.descrever_sonificacao('curva_luz'))
+        st.info(get_sonificador().descrever_sonificacao('curva_luz'))
     
     with col2:
         duracao_audio = st.slider("Duração do áudio (s)", 5, 30, 10, key='duracao_curva')
         if st.button("🎵 Gerar Áudio da Curva de Luz", use_container_width=True):
             with st.spinner("Gerando áudio..."):
-                audio_data, sample_rate = sonificador.sonificar_curva_luz(
+                audio_data, sample_rate = get_sonificador().sonificar_curva_luz(
                     time, flux, duracao_segundos=duracao_audio
                 )
-                audio_bytes = sonificador.criar_wav_bytes(audio_data, sample_rate)
+                audio_bytes = get_sonificador().criar_wav_bytes(audio_data, sample_rate)
                 
                 st.audio(audio_bytes, format='audio/wav')
                 st.download_button(
@@ -1284,16 +1316,16 @@ if buscar:
         
         col1, col2 = st.columns([2, 1])
         with col1:
-            st.info(sonificador.descrever_sonificacao('vibracoes'))
+            st.info(get_sonificador().descrever_sonificacao('vibracoes'))
         
         with col2:
             duracao_vibr = st.slider("Duração (s)", 5, 20, 10, key='duracao_vibr')
             if st.button("🎵 Gerar Áudio das Vibrações", use_container_width=True):
                 with st.spinner("Sintetizando frequências estelares..."):
-                    audio_vibr, sr_vibr = sonificador.sonificar_vibracoes(
+                    audio_vibr, sr_vibr = get_sonificador().sonificar_vibracoes(
                         frequencies, power, duracao_segundos=duracao_vibr
                     )
-                    audio_vibr_bytes = sonificador.criar_wav_bytes(audio_vibr, sr_vibr)
+                    audio_vibr_bytes = get_sonificador().criar_wav_bytes(audio_vibr, sr_vibr)
                     
                     st.audio(audio_vibr_bytes, format='audio/wav')
                     st.download_button(
@@ -1433,7 +1465,7 @@ if buscar:
                     resultado_cds = desc['cds_profissional']
                     
                     # Relatório completo
-                    relatorio = cds_pro.gerar_relatorio_profissional(resultado_cds)
+                    relatorio = get_cds_checker().gerar_relatorio_profissional(resultado_cds)
                     st.markdown(relatorio)
                     
                     # Detalhes adicionais em expanders
@@ -1600,7 +1632,7 @@ https://arxiv.org/search/?query={ra}+{dec}&searchtype=all&order=-announced_date_
             st.success("✓ Dados salvos no banco de dados!")
             
             # Mostrar estatísticas
-            historico = db.obter_historico_objeto(nome_estrela)
+            historico = get_database().obter_historico_objeto(nome_estrela)
             if historico:
                 col1, col2, col3 = st.columns(3)
                 with col1:
@@ -1618,7 +1650,7 @@ if 'mostrar_historico' in st.session_state and st.session_state['mostrar_histori
     st.header("Histórico e Estatísticas do Banco de Dados")
     
     # Estatísticas gerais
-    stats = db.estatisticas_gerais()
+    stats = get_database().estatisticas_gerais()
     
     st.subheader("Estatísticas Gerais")
     col1, col2, col3, col4 = st.columns(4)
@@ -1643,7 +1675,7 @@ if 'mostrar_historico' in st.session_state and st.session_state['mostrar_histori
     
     # Lista de descobertas
     st.subheader("Últimas Descobertas Potenciais")
-    descobertas_db = db.listar_descobertas_novas(limit=20)
+    descobertas_db = get_database().listar_descobertas_novas(limit=20)
     
     if descobertas_db:
         for desc in descobertas_db:
@@ -1670,7 +1702,7 @@ if 'mostrar_historico' in st.session_state and st.session_state['mostrar_histori
                     
                     st.markdown("""
                     **1. Verificar em Catálogos Profissionais:**
-                    - 🔗 [SIMBAD](http://simbad.u-strasbg.fr/simbad/sim-fcoo) - Busque por coordenadas
+                    - 🔗 [SIMBAD](http://get_simbad_checker().u-strasbg.fr/simbad/sim-fcoo) - Busque por coordenadas
                     - 🔗 [NASA Exoplanet Archive](https://exoplanetarchive.ipac.caltech.edu/) - Verificar planetas conhecidos
                     - 🔗 [VizieR](https://vizier.u-strasbg.fr/viz-bin/VizieR) - Catálogos astronômicos
                     
@@ -1710,7 +1742,7 @@ RA (sexagesimal): {ra_h:02d}h {ra_m:02d}m {ra_s:05.2f}s
 Dec (sexagesimal): {dec_sign}{dec_d:02d}° {dec_m:02d}' {dec_s:05.2f}"
 
 Busca SIMBAD: 
-http://simbad.u-strasbg.fr/simbad/sim-coo?Coord={desc['ra']}+{desc['dec']}&Radius=2
+http://get_simbad_checker().u-strasbg.fr/simbad/sim-coo?Coord={desc['ra']}+{desc['dec']}&Radius=2
 
 Busca NASA Exoplanet:
 https://exoplanetarchive.ipac.caltech.edu/cgi-bin/nstedAPI/nph-nstedAPI?table=exoplanets&select=*&where=ra>{desc['ra']-1}+and+ra<{desc['ra']+1}
@@ -1807,7 +1839,7 @@ if 'mostrar_alvos' in st.session_state and st.session_state['mostrar_alvos']:
         st.subheader("Alvos Kepler Aleatórios")
         st.info("KICs de alto número - estatisticamente menos estudados")
         
-        alvos_kepler = gerador_alvos.gerar_alvos_kepler(20)
+        alvos_kepler = get_gerador_alvos().gerar_alvos_kepler(20)
         
         for i, alvo in enumerate(alvos_kepler):
             col1, col2, col3 = st.columns([2, 1, 1])
@@ -1826,7 +1858,7 @@ if 'mostrar_alvos' in st.session_state and st.session_state['mostrar_alvos']:
         st.subheader("Alvos TESS Aleatórios")
         st.info("TICs de alto número - dados mais recentes, maior chance de descobertas não publicadas")
         
-        alvos_tess = gerador_alvos.gerar_alvos_tess(20)
+        alvos_tess = get_gerador_alvos().gerar_alvos_tess(20)
         
         for i, alvo in enumerate(alvos_tess):
             col1, col2, col3 = st.columns([2, 1, 1])
@@ -1845,7 +1877,7 @@ if 'mostrar_alvos' in st.session_state and st.session_state['mostrar_alvos']:
         st.subheader("Coordenadas Especiais")
         st.info("Regiões menos exploradas do campo Kepler")
         
-        alvos_coord = gerador_alvos.gerar_coordenadas_aleatorias_kepler(15)
+        alvos_coord = get_gerador_alvos().gerar_coordenadas_aleatorias_kepler(15)
         
         for i, alvo in enumerate(alvos_coord):
             with st.expander(f"📍 Região {i+1}: RA={alvo['ra']:.4f}°, Dec={alvo['dec']:.4f}°"):
