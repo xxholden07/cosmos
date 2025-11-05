@@ -286,28 +286,28 @@ class SimbadChecker:
                 'recomendacao': 'Erro ao verificar SIMBAD. Verifique manualmente ou tente novamente.'
             }
         
-        # Caso 2: Nenhum objeto encontrado
-        if status_simbad == 'POTENCIAL_NOVA':
+        # Caso 2: Nenhum objeto encontrado - DESCOBERTA POTENCIAL!
+        if status_simbad == 'POTENCIAL_NOVA' or total_objetos == 0:
             if confianca_deteccao > 85:
                 return {
                     'status': 'NOVA',
                     'prioridade': 5,
-                    'recomendacao': 'ALTA PRIORIDADE! Nenhum objeto conhecido nestas coordenadas. Verifique imediatamente e continue monitorando!'
+                    'recomendacao': '🚨 DESCOBERTA POTENCIAL! Nenhum objeto no SIMBAD. (1) Verifique com modo Profissional, (2) Faça 2+ observações, (3) Considere reportar.'
                 }
             elif confianca_deteccao > 70:
                 return {
                     'status': 'CANDIDATA',
                     'prioridade': 4,
-                    'recomendacao': 'Possível descoberta. Faça mais observações para aumentar confiança.'
+                    'recomendacao': 'Nenhum objeto conhecido. Aumente confiança com mais observações antes de declarar descoberta.'
                 }
             else:
                 return {
                     'status': 'ANALISAR',
                     'prioridade': 3,
-                    'recomendacao': 'Detecção interessante mas com baixa confiança. Observe novamente.'
+                    'recomendacao': 'Detecção com baixa confiança. Observe novamente antes de confirmar.'
                 }
         
-        # Caso 3: Objeto conhecido muito próximo (< 5 arcsec)
+        # Caso 3: Objeto conhecido MUITO próximo (< 5 arcsec) = Mesmo objeto
         if status_simbad == 'CONHECIDA':
             if objeto_principal:
                 nome = objeto_principal.get('identificador', 'desconhecido')
@@ -315,23 +315,39 @@ class SimbadChecker:
                 refs = objeto_principal.get('referencias', 0)
                 dist = objeto_principal.get('distancia_arcsec', 0)
                 
-                if refs > 50:
-                    return {
-                        'status': 'CONHECIDA',
-                        'prioridade': 1,
-                        'recomendacao': f'Objeto bem estudado: {nome} (tipo: {tipo}, {refs} referências). Detecção validada mas não é nova.'
-                    }
-                elif refs > 10:
-                    return {
-                        'status': 'CONHECIDA',
-                        'prioridade': 2,
-                        'recomendacao': f'Objeto conhecido: {nome} (tipo: {tipo}). Suas detecções confirmam dados existentes.'
-                    }
-                else:
+                # Muito próximo = definitivamente o mesmo objeto
+                if dist < 5:
+                    if refs > 50:
+                        return {
+                            'status': 'CONHECIDA',
+                            'prioridade': 1,
+                            'recomendacao': f'✅ Objeto BEM ESTUDADO: {nome} ({refs} refs). Detecção valida sistema, mas não é descoberta nova.'
+                        }
+                    elif refs > 10:
+                        return {
+                            'status': 'CONHECIDA',
+                            'prioridade': 2,
+                            'recomendacao': f'✅ Objeto CONHECIDO: {nome} ({refs} refs). Se detectou característica nova, pode ser interessante!'
+                        }
+                    else:
+                        return {
+                            'status': 'CANDIDATA',
+                            'prioridade': 3,
+                            'recomendacao': f'🟡 Objeto POUCO ESTUDADO: {nome} ({refs} refs). Características detectadas podem ser novas!'
+                        }
+                # Moderadamente próximo (5-30 arcsec) = Incerto
+                elif 5 <= dist < 30:
                     return {
                         'status': 'CANDIDATA',
                         'prioridade': 3,
-                        'recomendacao': f'Objeto pouco estudado: {nome} ({refs} refs). Suas análises podem adicionar valor!'
+                        'recomendacao': f'🟡 Objeto a {dist:.1f}" - Pode ser mesmo objeto ou campo. Verifique astrometria.'
+                    }
+                # Distante (>30 arcsec) = Provavelmente campo
+                else:
+                    return {
+                        'status': 'CANDIDATA',
+                        'prioridade': 4,
+                        'recomendacao': f'🟢 Objeto mais próximo a {dist:.1f}" (distante). Sua detecção pode ser nova!'
                     }
         
         # Caso 4: Objetos no campo mas não muito próximos
@@ -339,7 +355,7 @@ class SimbadChecker:
             return {
                 'status': 'CANDIDATA',
                 'prioridade': 4,
-                'recomendacao': f'Objetos encontrados no campo ({total_objetos}), mas não muito próximos. Pode ser descoberta de companheira ou evento novo.'
+                'recomendacao': f'🟡 {total_objetos} objetos no campo mas não muito próximos. Pode ser companheira ou evento novo.'
             }
         
         # Caso padrão

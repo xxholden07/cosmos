@@ -214,60 +214,121 @@ class CDSProfessionalChecker:
         return resultado
     
     def _classificar_resultado(self, resultado):
-        """Classificação final baseada em todos os resultados"""
-        status_simbad = resultado['simbad']['status']
+        """Classificação final baseada em todos os resultados - RIGOROSA"""
         
-        if (status_simbad == 'POTENCIAL_NOVA' and 
-            (not resultado['exoplanetas'] or not resultado['exoplanetas']['encontrado']) and
-            (not resultado['variaveis'] or not resultado['variaveis']['encontrado']) and
-            (not resultado['transientes'] or not resultado['transientes']['encontrado'])):
+        status_simbad = resultado['simbad']['status']
+        total_objetos_simbad = resultado['simbad']['total_objetos']
+        obj_principal = resultado['simbad'].get('objeto_principal')
+        
+        # Verificar se há planetas conhecidos
+        tem_planetas_conhecidos = (resultado['exoplanetas'] and 
+                                   resultado['exoplanetas']['encontrado'] and 
+                                   resultado['exoplanetas']['total_planetas'] > 0)
+        
+        # Verificar se há variáveis conhecidas
+        tem_variaveis_conhecidas = (resultado['variaveis'] and 
+                                     resultado['variaveis']['encontrado'] and 
+                                     resultado['variaveis']['total_variaveis'] > 0)
+        
+        # Verificar se há transientes conhecidos
+        tem_transientes_conhecidos = (resultado['transientes'] and 
+                                       resultado['transientes']['encontrado'] and 
+                                       resultado['transientes']['total_transientes'] > 0)
+        
+        # CASO 1: Nenhum objeto encontrado em NENHUM catálogo (DESCOBERTA REAL!)
+        if (total_objetos_simbad == 0 and 
+            not tem_planetas_conhecidos and 
+            not tem_variaveis_conhecidas and 
+            not tem_transientes_conhecidos):
             
             return {
                 'status': 'DESCOBERTA_POTENCIAL',
                 'prioridade': 5,
-                'mensagem': 'ALTA PRIORIDADE! Nenhum objeto conhecido encontrado em múltiplos catálogos profissionais.',
-                'recomendacao': 'Verificação tripla confirmada. Proceda com observações de confirmação imediatamente.'
+                'mensagem': '🚨 DESCOBERTA POTENCIAL! Nenhum objeto encontrado em SIMBAD, VizieR, catálogos de exoplanetas, variáveis ou transientes.',
+                'recomendacao': 'AÇÃO IMEDIATA: (1) Verifique manualmente no SIMBAD, (2) Faça mais 2-3 observações, (3) Considere reportar se confirmar.'
             }
         
-        if status_simbad == 'CONHECIDA':
-            obj = resultado['simbad']['objeto_principal']
+        # CASO 2: Objeto MUITO próximo no SIMBAD (< 5 arcsec) = Mesmo objeto
+        if obj_principal and obj_principal['separacao_arcsec'] < 5:
+            obj_nome = obj_principal['nome']
+            obj_tipo = obj_principal['tipo']
+            obj_refs = obj_principal['referencias']
             
-            if resultado['exoplanetas'] and resultado['exoplanetas']['encontrado']:
+            # Sub-caso 2.1: É um planeta conhecido
+            if tem_planetas_conhecidos:
                 return {
                     'status': 'PLANETA_CONHECIDO',
                     'prioridade': 1,
-                    'mensagem': f"Planeta conhecido: {obj['nome']}",
-                    'recomendacao': 'Detecção validada. Sistema funcionando corretamente.'
+                    'mensagem': f"✅ Sistema planetário CONHECIDO: {obj_nome} ({obj_refs} referências científicas)",
+                    'recomendacao': f'Este planeta já foi descoberto e estudado. Sua detecção VALIDA que o sistema está funcionando corretamente!'
                 }
             
-            if resultado['variaveis'] and resultado['variaveis']['encontrado']:
+            # Sub-caso 2.2: É uma variável conhecida
+            if tem_variaveis_conhecidas:
+                tipo_variavel = resultado['variaveis']['variaveis'][0]['tipo'] if resultado['variaveis']['variaveis'] else 'desconhecido'
                 return {
                     'status': 'VARIAVEL_CONHECIDA',
                     'prioridade': 1,
-                    'mensagem': f"Estrela variável conhecida: {obj['nome']}",
-                    'recomendacao': 'Detecção validada. Suas análises confirmam variabilidade conhecida.'
+                    'mensagem': f"✅ Estrela VARIÁVEL CONHECIDA: {obj_nome} (Tipo: {tipo_variavel}, {obj_refs} refs)",
+                    'recomendacao': 'Variabilidade já catalogada. Sua detecção confirma os dados publicados.'
                 }
             
+            # Sub-caso 2.3: Objeto conhecido mas SEM planeta/variável catalogado
+            if obj_refs > 50:
+                return {
+                    'status': 'OBJETO_BEM_ESTUDADO',
+                    'prioridade': 2,
+                    'mensagem': f"⚪ Objeto BEM ESTUDADO: {obj_nome} ({obj_tipo}, {obj_refs} papers publicados)",
+                    'recomendacao': 'Objeto muito estudado. Se detectou algo novo (planeta/variabilidade), pode ser descoberta SECUNDÁRIA interessante!'
+                }
+            elif obj_refs > 10:
+                return {
+                    'status': 'OBJETO_CONHECIDO',
+                    'prioridade': 2,
+                    'mensagem': f"⚪ Objeto CONHECIDO: {obj_nome} ({obj_tipo}, {obj_refs} referências)",
+                    'recomendacao': 'Objeto catalogado mas moderadamente estudado. Características detectadas podem ser novas!'
+                }
+            else:
+                return {
+                    'status': 'CANDIDATA_FORTE',
+                    'prioridade': 4,
+                    'mensagem': f"🟡 Objeto POUCO ESTUDADO: {obj_nome} ({obj_refs} referências apenas)",
+                    'recomendacao': 'Objeto existe mas com poucos estudos. Alta chance de descobrir características novas!'
+                }
+        
+        # CASO 3: Objeto moderadamente próximo (5-30 arcsec) = Pode ser mesmo objeto ou campo
+        if obj_principal and 5 <= obj_principal['separacao_arcsec'] < 30:
             return {
-                'status': 'OBJETO_CONHECIDO',
-                'prioridade': 2,
-                'mensagem': f"Objeto catalogado: {obj['nome']} ({obj['tipo']})",
-                'recomendacao': 'Objeto conhecido mas características detectadas podem ser novas.'
+                'status': 'CANDIDATA',
+                'prioridade': 3,
+                'mensagem': f"🟡 Objeto a {obj_principal['separacao_arcsec']:.1f} arcsec - Pode ser o mesmo ou campo estelar",
+                'recomendacao': 'Distância moderada. Verifique astrometria. Pode ser companheira ou objeto novo no campo.'
             }
         
-        if status_simbad == 'CAMPO_ESTELAR':
+        # CASO 4: Objeto distante (30-120 arcsec) = Campo estelar
+        if obj_principal and 30 <= obj_principal['separacao_arcsec'] < 120:
+            return {
+                'status': 'CAMPO_ESTELAR',
+                'prioridade': 4,
+                'mensagem': f"🟢 Objeto mais próximo a {obj_principal['separacao_arcsec']:.1f} arcsec - Distante do alvo",
+                'recomendacao': 'Objeto no campo estelar mas distante. Sua detecção pode ser algo NOVO! Continue monitorando.'
+            }
+        
+        # CASO 5: Apenas objetos muito distantes encontrados
+        if total_objetos_simbad > 0 and (not obj_principal or obj_principal['separacao_arcsec'] >= 120):
             return {
                 'status': 'CANDIDATA_FORTE',
                 'prioridade': 4,
-                'mensagem': 'Objetos distantes no campo. Detecção pode ser novo objeto ou companheira.',
-                'recomendacao': 'Candidata forte. Continue monitoramento e faça verificações astrométricas.'
+                'mensagem': f"🟢 {total_objetos_simbad} objetos no campo mas TODOS muito distantes (>120 arcsec)",
+                'recomendacao': 'Nenhum objeto próximo conhecido. Alta probabilidade de descoberta nova!'
             }
         
+        # CASO PADRÃO: Situação ambígua
         return {
-            'status': 'CANDIDATA',
+            'status': 'ANALISAR_MANUALMENTE',
             'prioridade': 3,
-            'mensagem': 'Detecção interessante com objetos próximos.',
-            'recomendacao': 'Faça mais observações para confirmação.'
+            'mensagem': 'Situação ambígua - análise manual recomendada',
+            'recomendacao': 'Verifique manualmente os resultados. Consulte especialista se necessário.'
         }
     
     def gerar_relatorio_profissional(self, resultado):
